@@ -16,7 +16,7 @@ Para poder hacer las practicas en código, instalé el copilador desde:
 Al ejecutar el gestor de intalación seleccioné mingw32-base ymingw32-gcc-g++. Agregé el path del copilador a las variables de entorno y reinicie la termina. Para comprobar que el copilador funciona:
 
 ```plaintext
-b
+gcc --version
 
 ```
 
