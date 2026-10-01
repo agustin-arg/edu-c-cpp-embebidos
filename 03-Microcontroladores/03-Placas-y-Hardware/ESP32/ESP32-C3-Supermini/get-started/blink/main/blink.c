@@ -4,7 +4,7 @@
 #include <stdio.h>
 
 #define LED_PIN_5 GPIO_NUM_5
-#define LED_PIN_0 GPIO_NUM_0
+#define LED_PIN_0 GPIO_NUM_4
 
 void app_main(void)
 {
