@@ -39,7 +39,7 @@ static rmt_channel_handle_t s_tx_channel = NULL;
 static rmt_encoder_handle_t s_copy_encoder = NULL;
 
 static rmt_receive_config_t s_rx_config = {
-    .signal_range_min_ns = 10000,    // 10 us: descarta micro-glitches y rebotes ópticos
+    .signal_range_min_ns = 1250,     // 1.25 us: filtro de hardware para glitches (límite máx en C3: 3187 ns)
     .signal_range_max_ns = 15000000, // 15 ms: cubre la pausa entre secciones (~7.9ms en DG11J1)
 };
 
