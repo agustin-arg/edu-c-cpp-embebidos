@@ -80,3 +80,31 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 - **Integraciones y Programación**:
   - [Home Assistant MQTT Climate Integration](https://www.home-assistant.io/integrations/climate.mqtt/)
   - [Componente esp_cron en Espressif Registry](https://components.espressif.com/components/bubao/esp_cron)
+
+---
+
+## 7. Registro de Estado y Pruebas Realizadas
+
+### 7.1 Hito Alcanzado (Captura Exitosa)
+- Firmware Sniff & Replay implementado y corriendo en el ESP32-C3 SuperMini.
+- **Captura confirmada**: Se recibieron **172 símbolos** con duración de ~261 ms y cabecera de Mark ~9100 µs / Space ~3930-4030 µs.
+- **Validación teórica**: Coincide al 100% con la estructura del protocolo **Whirlpool / DG11J1** (21 bytes = 168 bits de carga útil + headers y gaps de 3 secciones).
+
+### 7.2 Diagnóstico de la Retransmisión Pendiente
+El LED infrarrojo emite luz (verificado con cámara), pero el split Marshall aún no ha respondido. 
+
+**Causas identificadas para verificar en la próxima sesión**:
+1. **Potencia y Alcance Óptico**:
+   - Las cámaras son ultrasensibles a la luz IR (detectan incluso con 1 a 5 mA).
+   - Los receptores de los splits de aire acondicionado están protegidos tras plásticos oscuros filtrantes y exigen ráfagas de corriente elevadas (50 a 100 mA).
+   - *Prueba a realizar*: Apuntar el LED a escasos centímetros (10-20 cm) directamente frente al sensor receptor del split.
+2. **Duty Cycle de la Portadora**:
+   - Se ajustó el *duty cycle* del carrier de 38 kHz del 33% al **50%**, tal como estipula la implementación de referencia en `IRremoteESP8266` para el protocolo Whirlpool (`sendGeneric` con duty 50%), aumentando un 50% la energía óptica emitida por ciclo.
+3. **Resistencia de Polarización del Transistor**:
+   - Verificar el valor de la resistencia entre el colector/ánodo del LED IR y la alimentación (idealmente 5V si está disponible, con resistencia entre 10Ω y 33Ω).
+4. **Estado del Comando (Power ON vs Power OFF)**:
+   - En el protocolo DG11J1, los comandos transmiten el estado absoluto. Si el control remoto capturado estaba sincronizado en estado "apagado" y el split ya estaba apagado, el split ignora el comando.
+   - *Prueba a realizar*: Encender primero el aire con el control manual, luego capturar y probar tanto comandos de cambio de temperatura como encendido/apagado.
+5. **Auto-test por Bucle (Loopback)**:
+   - Probar apuntar el LED IR directamente al TSOP1738 al disparar para corroborar que los símbolos retransmitidos son idénticos a los del control remoto original.
+

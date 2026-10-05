@@ -141,10 +141,10 @@ static void init_ir_subsystem(void)
     };
     ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_channel_cfg, &s_tx_channel));
 
-    // Modulación por portadora de 38 kHz para el emisor
+    // Modulación por portadora de 38 kHz para el emisor (50% duty cycle según protocolo DG11J1/Whirlpool)
     rmt_carrier_config_t carrier_cfg = {
         .frequency_hz = IR_CARRIER_FREQ_HZ,
-        .duty_cycle = 0.33, // Duty cycle óptimo para emisión infrarroja
+        .duty_cycle = 0.50, // 50% duty cycle para máxima respuesta del filtro TSOP/Split
     };
     ESP_ERROR_CHECK(rmt_apply_carrier(s_tx_channel, &carrier_cfg));
 
