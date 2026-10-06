@@ -1,6 +1,7 @@
 # Plan de Proyecto: Controlador Inteligente de Aire Acondicionado Marshall
 
 ## 1. Resumen Ejecutivo
+
 Desarrollo de un firmware nativo en **ESP-IDF v5.5** para el microcontrolador **ESP32-C3 SuperMini**, capaz de controlar un acondicionador de aire marca **Marshall** mediante señales infrarrojas (IR). El sistema permitirá control autónomo por horarios y la integración en red local con una **Raspberry Pi 4 B** (mediante Home Assistant y MQTT), además de una API REST HTTP local.
 
 ---
@@ -8,6 +9,7 @@ Desarrollo de un firmware nativo en **ESP-IDF v5.5** para el microcontrolador **
 ## 2. Hardware y Conexiones Actuales
 
 ### 2.1 Componentes en Uso
+
 - **Microcontrolador**: ESP32-C3 SuperMini (RISC-V 32-bit a 160 MHz, Wi-Fi 4, BLE 5).
 - **Emisor IR**: Diodo LED Infrarrojo de 940 nm excitado mediante transistor NPN (para suministrar la corriente necesaria para alcance óptico).
 - **Receptor IR**: Demodulador TSOP1738 (38 kHz, activo en nivel bajo).
@@ -15,7 +17,9 @@ Desarrollo de un firmware nativo en **ESP-IDF v5.5** para el microcontrolador **
 - **Equipo a Controlar**: Aire Acondicionado Split marca **Marshall**.
 
 ### 2.2 Asignación de Pines (GPIO)
+
 Las conexiones probadas y verificadas funcionalmente en `/home/agust/Projects/ESP32/C3-Supermini/get-started/ir-test` son:
+
 - **GPIO 0**: Salida TX (Emisor LED Infrarrojo con portadora de 38 kHz).
 - **GPIO 5**: Entrada RX (Receptor TSOP1738 con pull-up interno / filtro).
 - **Alimentación**: 5V / 3.3V y GND común.
@@ -23,7 +27,9 @@ Las conexiones probadas y verificadas funcionalmente en `/home/agust/Projects/ES
 ---
 
 ## 3. Protocolo Infrarrojo del Control Remoto (DG11J1-01)
+
 El control remoto físico **DG11J1-01** corresponde a la arquitectura de protocolo **Whirlpool / Hisense / Kelon** (ampliamente documentado en la biblioteca `IRremoteESP8266` bajo el protocolo `Whirlpool` y soporte para la familia `DG11J1`):
+
 - **Portadora**: 38 kHz.
 - **Header**: Pulso activo (*Mark*) de ~8950 µs seguido de un espacio (*Space*) de ~4480 µs.
 - **Bit 0**: Mark de ~590 µs + Space de ~530 µs.
@@ -34,7 +40,9 @@ El control remoto físico **DG11J1-01** corresponde a la arquitectura de protoco
 ---
 
 ## 4. Política de Versionado y Flujo de Trabajo (Git)
+
 Para garantizar un historial de commits limpio, atómico y consistente:
+
 1. **Contexto**: Antes de iniciar cualquier cambio o nueva etapa en el proyecto, ejecutar `git log -n 5` para revisar el formato y la convención de mensajes del repositorio.
 2. **Confirmación**: Tras completar cada paso funcional y verificar su compilación/ejecución, ejecutar `git add .` (dentro del directorio del proyecto) y realizar el `git commit` descriptivo.
 
@@ -43,7 +51,9 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 ## 5. Hoja de Ruta y Fases de Desarrollo
 
 ### Fase 1: Prueba de Concepto Físico (Paso Inmediato)
+
 **Objetivo**: Validar el circuito emisor/receptor y lograr el encendido del aire acondicionado.
+
 - **Estrategia (Opción 1 - Sniff & Replay crudo con RMT)**:
   1. Utilizar el canal de recepción RMT (`rmt_new_rx_channel`) en **GPIO 5** para capturar los tiempos crudos al presionar "Power" en el control DG11J1-01.
   2. Imprimir los tiempos por monitor serial para verificar el disparo.
@@ -51,23 +61,39 @@ Para garantizar un historial de commits limpio, atómico y consistente:
   4. Confirmar la respuesta sonora (*beep*) y puesta en marcha del equipo.
 
 ### Fase 2: Decodificación Estructurada y Generador de Tramas
+
 **Objetivo**: Controlar cualquier variable (temperatura, modo, fan) sin depender de grabaciones fijas.
+
 - Extraer e implementar en C nativo para ESP-IDF la lógica de generación de tramas del protocolo DG11J1/Whirlpool.
 - Proveer una función unificada `ac_send_command(power, mode, temp, fan, swing)`.
 
 ### Fase 3: Sincronización Horaria y Programación Local
+
 **Objetivo**: Autonomía frente a cortes de red o reinicios.
+
 - Conexión a red Wi-Fi y sincronización horaria mediante SNTP (`esp_netif_sntp`) con ajuste de zona horaria local (`TZ=ART3`).
 - Programador de eventos locales (`esp_cron` o timers FreeRTOS) para disparar acciones a horas específicas.
 
-### Fase 4: Servidor REST y Orquestación MQTT / Home Assistant
-**Objetivo**: Integración con la Raspberry Pi 4 B y control domótico.
-- **API REST Local**: Servidor HTTP embebido (`esp_http_server`) que reciba peticiones POST con payloads JSON para control directo y consulta de estado.
-- **Cliente MQTT**: Conexión hacia el broker Mosquitto en la Raspberry Pi 4 B con soporte para **Home Assistant MQTT Auto-Discovery** (clase `climate`).
+### Fase 4: Servidor REST y Orquestación MQTT / Home Assistant / OpenClaw
+
+**Objetivo**: Integración con la Raspberry Pi 4 B (broker Mosquitto), interfaz web, Home Assistant y agentes como OpenClaw.
+
+- **Máquina de Estado Centralizada (RAM / NVS)**:
+  - Mantener una estructura de datos `ac_state_t` con el estado completo actual (encendido, modo, temp, fan, swing).
+  - Persistencia opcional en NVS para recuperar el estado ante reinicios imprevistos.
+- **Cliente MQTT Bidireccional (`esp-mqtt`)**:
+  - **Suscripción (`.../set`)**: Recepción de órdenes atómicas o completas desde la interfaz, Home Assistant o OpenClaw. El ESP actualiza su estado interno y dispara la trama IR correspondiente.
+  - **Publicación Reactiva y Sincronización (`.../status`)**:
+    - **Escucha activa / Sniffing en segundo plano (GPIO 5)**: Al detectar una trama válida emitida por el control remoto físico DG11J1-01, el decodificador actualiza el estado interno del ESP32.
+    - Publica de inmediato el estado resultante en `aire/salon/status` en formato JSON, sincronizando en tiempo real la interfaz gráfica y OpenClaw.
+    - Mecanismo de inhibición transitoria de RX para evitar eco o bucle cerrado durante la transmisión propia (GPIO 0).
+  - Soporte para **Home Assistant MQTT Auto-Discovery** (entidad de tipo `climate`).
+- **API REST Local (Secundaria / Fallback)**: Servidor HTTP embebido (`esp_http_server`) para control directo sin broker.
 
 ---
 
 ## 6. Enlaces y Recursos de Referencia
+
 - **IRremoteESP8266 (Protocolo Whirlpool / DG11J1)**:
   - [ir_Whirlpool.h en GitHub](https://github.com/crankyoldgit/IRremoteESP8266/blob/master/src/ir_Whirlpool.h)
   - [ir_Whirlpool.cpp en GitHub](https://github.com/crankyoldgit/IRremoteESP8266/blob/master/src/ir_Whirlpool.cpp)
@@ -86,11 +112,12 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 ## 7. Registro de Estado y Pruebas Realizadas
 
 ### 7.1 Hito Alcanzado: Fase 1 (PoC Físico) Superada con Éxito
+
 - **Firmware probado**: Sniff & Replay con RMT en ESP32-C3 SuperMini.
 - **Captura confirmada**: 172 símbolos RMT (~261 ms), cabecera Mark ~9100 µs / Space ~4000 µs.
 - **Validación del actuador óptico**: El aire acondicionado Marshall respondió correctamente al comando retransmitido por el LED IR (GPIO 0 con portadora a 38 kHz y 50% duty cycle).
 - **Conclusión de Hardware**: Tanto la etapa receptora (TSOP1738 en GPIO 5) como la etapa transmisora (Transistor NPN + LED IR en GPIO 0) están 100% validadas y operativas.
 
 ### 7.2 Siguiente Paso (Fase 2)
-Una vez validada la capa física y la respuesta del equipo, el siguiente objetivo es implementar el **Generador de Tramas Estructurado** para el protocolo DG11J1 / Whirlpool. Esto permitirá fijar temperatura, cambiar modo (Frío/Calor/Ventilación), velocidad del ventilador y encendido/apagado por software de manera paramétrica sin depender de grabaciones fijas previas.
 
+Una vez validada la capa física y la respuesta del equipo, el siguiente objetivo es implementar el **Generador de Tramas Estructurado** para el protocolo DG11J1 / Whirlpool. Esto permitirá fijar temperatura, cambiar modo (Frío/Calor/Ventilación), velocidad del ventilador y encendido/apagado por software de manera paramétrica sin depender de grabaciones fijas previas.
