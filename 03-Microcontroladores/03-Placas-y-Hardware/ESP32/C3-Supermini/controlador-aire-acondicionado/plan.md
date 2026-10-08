@@ -20,8 +20,9 @@ Desarrollo de un firmware nativo en **ESP-IDF v5.5** para el microcontrolador **
 
 Las conexiones probadas y verificadas funcionalmente en `/home/agust/Projects/ESP32/C3-Supermini/get-started/ir-test` son:
 
-- **GPIO 0**: Salida TX (Emisor LED Infrarrojo con portadora de 38 kHz).
-- **GPIO 5**: Entrada RX (Receptor TSOP1738 con pull-up interno / filtro).
+- **GPIO 0**: Salida TX (Emisor LED Infrarrojo con transistor NPN y portadora de 38 kHz).
+- **GPIO 6**: Entrada RX (Receptor demodulador TSOP1738 con pull-up interno).
+- **GPIO 9**: Botón de usuario / BOOT integrado (disparo manual en placa).
 - **Alimentación**: 5V / 3.3V y GND común.
 
 ---
@@ -55,17 +56,19 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 **Objetivo**: Validar el circuito emisor/receptor y lograr el encendido del aire acondicionado.
 
 - **Estrategia (Opción 1 - Sniff & Replay crudo con RMT)**:
-  1. Utilizar el canal de recepción RMT (`rmt_new_rx_channel`) en **GPIO 5** para capturar los tiempos crudos al presionar "Power" en el control DG11J1-01.
+  1. Utilizar el canal de recepción RMT (`rmt_new_rx_channel`) en **GPIO 6** para capturar los tiempos crudos al presionar "Power" en el control DG11J1-01.
   2. Imprimir los tiempos por monitor serial para verificar el disparo.
   3. Utilizar el canal de transmisión RMT (`rmt_new_tx_channel`) con portadora habilitada a 38 kHz en **GPIO 0** para reproducir la misma señal capturada apuntando al split.
   4. Confirmar la respuesta sonora (*beep*) y puesta en marcha del equipo.
 
-### Fase 2: Decodificación Estructurada y Generador de Tramas
+### Fase 2: Decodificación Estructurada y Generador de Tramas (Completada)
 
-**Objetivo**: Controlar cualquier variable (temperatura, modo, fan) sin depender de grabaciones fijas.
+**Objetivo**: Controlar cualquier variable (temperatura, modo, fan, swing) sin depender de grabaciones fijas.
 
-- Extraer e implementar en C nativo para ESP-IDF la lógica de generación de tramas del protocolo DG11J1/Whirlpool.
-- Proveer una función unificada `ac_send_command(power, mode, temp, fan, swing)`.
+- Extraer e implementar en C nativo para ESP-IDF la lógica de generación de tramas del protocolo DG11J1/Whirlpool (`dg11j1_protocol.h` y `dg11j1_protocol.c`).
+- Proveer API unificada de codificación y decodificación de 21 bytes (168 bits) con cálculo de checksums XOR (`Sum1` y `Sum2`).
+- Conversión precisa de tramas a símbolos de hardware RMT.
+- Integración en la interfaz de consola interactiva del microcontrolador.
 
 ### Fase 3: Sincronización Horaria y Programación Local
 
@@ -84,7 +87,7 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 - **Cliente MQTT Bidireccional (`esp-mqtt`)**:
   - **Suscripción (`.../set`)**: Recepción de órdenes atómicas o completas desde la interfaz, Home Assistant o OpenClaw. El ESP actualiza su estado interno y dispara la trama IR correspondiente.
   - **Publicación Reactiva y Sincronización (`.../status`)**:
-    - **Escucha activa / Sniffing en segundo plano (GPIO 5)**: Al detectar una trama válida emitida por el control remoto físico DG11J1-01, el decodificador actualiza el estado interno del ESP32.
+    - **Escucha activa / Sniffing en segundo plano (GPIO 6)**: Al detectar una trama válida emitida por el control remoto físico DG11J1-01, el decodificador actualiza el estado interno del ESP32.
     - Publica de inmediato el estado resultante en `aire/salon/status` en formato JSON, sincronizando en tiempo real la interfaz gráfica y OpenClaw.
     - Mecanismo de inhibición transitoria de RX para evitar eco o bucle cerrado durante la transmisión propia (GPIO 0).
   - Soporte para **Home Assistant MQTT Auto-Discovery** (entidad de tipo `climate`).
@@ -110,14 +113,27 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 ---
 
 ## 7. Registro de Estado y Pruebas Realizadas
-
+ 
 ### 7.1 Hito Alcanzado: Fase 1 (PoC Físico) Superada con Éxito
-
+ 
 - **Firmware probado**: Sniff & Replay con RMT en ESP32-C3 SuperMini.
 - **Captura confirmada**: 172 símbolos RMT (~261 ms), cabecera Mark ~9100 µs / Space ~4000 µs.
 - **Validación del actuador óptico**: El aire acondicionado Marshall respondió correctamente al comando retransmitido por el LED IR (GPIO 0 con portadora a 38 kHz y 50% duty cycle).
-- **Conclusión de Hardware**: Tanto la etapa receptora (TSOP1738 en GPIO 5) como la etapa transmisora (Transistor NPN + LED IR en GPIO 0) están 100% validadas y operativas.
-
-### 7.2 Siguiente Paso (Fase 2)
-
-Una vez validada la capa física y la respuesta del equipo, el siguiente objetivo es implementar el **Generador de Tramas Estructurado** para el protocolo DG11J1 / Whirlpool. Esto permitirá fijar temperatura, cambiar modo (Frío/Calor/Ventilación), velocidad del ventilador y encendido/apagado por software de manera paramétrica sin depender de grabaciones fijas previas.
+- **Conclusión de Hardware**: Tanto la etapa receptora (TSOP1738) como la etapa transmisora (Transistor NPN + LED IR en GPIO 0) quedaron 100% validadas.
+ 
+### 7.2 Hito Alcanzado: Fase 2 (Codificación y Decodificación Estructurada) Superada con Éxito
+ 
+- **Pines finales validados**: Receptor TSOP1738 reubicado al **GPIO 6** (digital estándar, dejando libres los ADC GPIO 0-4), Emisor IR en **GPIO 0**, Botón **BOOT** en GPIO 9.
+- **Módulo de Protocolo (`dg11j1_protocol.h` / `.c`)**:
+-   - Soporte completo para tramas multifase de 21 bytes (168 bits) en 3 secciones.
+-   - Cálculo exacto de checksums `Sum1` y `Sum2`.
+-   - Generador dinámico de símbolos RMT (172 pulsos).
+-   - Decodificador con tolerancia temporal y sincronización bidireccional.
+-   - Corrección crítica de comportamiento: el bit de Power Toggle solo se conmuta al ejecutar encendido/apagado, permitiendo cambios de temperatura y modo sin apagar el equipo.
+- - **Validación en Hardware Real**: Control paramétrico verificado exitosamente sobre el split Marshall (cambio de temperatura, modo, velocidad de fan y oscilación de swing respondiendo sin apagar la unidad).
+ 
+### 7.3 Siguiente Paso (Fase 3 / Fase 4)
+ 
+Una vez garantizado el control total del aire acondicionado vía software nativo, el siguiente paso es la **conectividad Wi-Fi**:
+1. Conexión de red local e integración con el broker **MQTT** (Mosquitto en Raspberry Pi 4) para exponer el equipo a **Home Assistant** (`climate.mqtt`) y permitir control remoto vía teléfono/agentes como OpenClaw.
+2. Sincronización horaria con **SNTP** (`esp_netif_sntp`) para control autónomo programado por horarios locales.
