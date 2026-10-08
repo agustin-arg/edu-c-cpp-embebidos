@@ -88,10 +88,12 @@ void dg11j1_build_frame(const ac_state_t *state, ac_cmd_t cmd, uint8_t *out_byte
     out_bytes[0] = 0x83;
     out_bytes[1] = 0x06;
 
-    // Byte 2: Fan (bits 0-1), Power (bit 2), Sleep (bit 3), Swing1 (bit 7)
+    // Byte 2: Fan (bits 0-1), Power Toggle (bit 2), Sleep (bit 3), Swing1 (bit 7)
     uint8_t b2 = 0;
     b2 |= (state->fan & 0x03);
-    if (state->power) {
+    // En el protocolo DG11J1, bit 2 es "Power TOGGLE", no nivel estático de Power.
+    // Solo se debe enviar en 1 si la acción fue presionar el botón de encendido/apagado.
+    if (cmd == AC_CMD_POWER) {
         b2 |= (1 << 2);
     }
     if (state->swing) {

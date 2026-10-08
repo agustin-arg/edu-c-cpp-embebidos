@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "esp_system.h"
+#include "esp_mac.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -20,7 +21,7 @@ static const char *TAG = "WIFI_MGR";
 #define NVS_KEY_PASS        "pass"
 
 #define SOFTAP_SSID         "Aire-Marshall-Setup"
-#define SOFTAP_PASS         ""                  // Red abierta para configuración rápida
+#define SOFTAP_PASS         "12345678"
 #define SOFTAP_MAX_CONN     4
 #define WIFI_CONNECTED_BIT  BIT0
 #define WIFI_FAIL_BIT       BIT1
@@ -147,8 +148,6 @@ static esp_err_t save_post_handler(httpd_req_t *req)
     char new_ssid[33] = {0};
     char new_pass[65] = {0};
 
-    // Parseo de formulario application/x-www-form-urlencoded
-    // Formato esperado: ssid=...&pass=...
     char *p_ssid = strstr(buf, "ssid=");
     char *p_pass = strstr(buf, "pass=");
 
@@ -156,7 +155,6 @@ static esp_err_t save_post_handler(httpd_req_t *req)
         p_ssid += 5;
         char *amp = strchr(p_ssid, '&');
         if (amp) *amp = '\0';
-        // Decodificación básica de '+' por espacios
         for (char *c = p_ssid; *c; c++) if (*c == '+') *c = ' ';
         strncpy(new_ssid, p_ssid, sizeof(new_ssid) - 1);
     }
@@ -218,21 +216,29 @@ static void start_web_config_server(void)
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        s_current_state = WIFI_MGR_STA_CONNECTING;
-        esp_wifi_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_current_state != WIFI_MGR_SOFTAP_ACTIVE) {
-            if (s_retry_num < MAX_RETRY_COUNT) {
-                s_retry_num++;
-                ESP_LOGI(TAG, "Reintentando conexión Wi-Fi (%d/%d)...", s_retry_num, MAX_RETRY_COUNT);
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                esp_wifi_connect();
-            } else {
-                ESP_LOGW(TAG, "Fallo al conectar a '%s'. Iniciando SoftAP de rescate...", s_saved_ssid);
-                xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-                wifi_manager_start_softap();
+    if (event_base == WIFI_EVENT) {
+        if (event_id == WIFI_EVENT_STA_START) {
+            s_current_state = WIFI_MGR_STA_CONNECTING;
+            esp_wifi_connect();
+        } else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
+            if (s_current_state != WIFI_MGR_SOFTAP_ACTIVE) {
+                if (s_retry_num < MAX_RETRY_COUNT) {
+                    s_retry_num++;
+                    ESP_LOGI(TAG, "Reintentando conexión Wi-Fi (%d/%d)...", s_retry_num, MAX_RETRY_COUNT);
+                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    esp_wifi_connect();
+                } else {
+                    ESP_LOGW(TAG, "Fallo al conectar a '%s'. Iniciando SoftAP de rescate...", s_saved_ssid);
+                    xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+                    wifi_manager_start_softap();
+                }
             }
+        } else if (event_id == WIFI_EVENT_AP_STACONNECTED) {
+            wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *)event_data;
+            ESP_LOGI(TAG, "Dispositivo conectado al SoftAP: MAC=" MACSTR ", AID=%d",
+                     MAC2STR(event->mac), event->aid);
+        } else if (event_id == WIFI_EVENT_AP_START) {
+            ESP_LOGI(TAG, ">>> Evento: SoftAP iniciado correctamente en el hardware RF! <<<");
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
@@ -249,31 +255,32 @@ void wifi_manager_start_softap(void)
 
     s_current_state = WIFI_MGR_SOFTAP_ACTIVE;
 
-    // Detener modo Station si estaba activo
-    esp_wifi_stop();
-
-    if (s_ap_netif == NULL) {
-        s_ap_netif = esp_netif_create_default_wifi_ap();
-    }
-
     wifi_config_t ap_config = {
         .ap = {
             .ssid = SOFTAP_SSID,
             .ssid_len = strlen(SOFTAP_SSID),
-            .channel = 1,
+            .channel = 6,
             .password = SOFTAP_PASS,
             .max_connection = SOFTAP_MAX_CONN,
-            .authmode = WIFI_AUTH_OPEN
+            .authmode = WIFI_AUTH_WPA2_PSK,
+            .ssid_hidden = 0,
+            .beacon_interval = 100,
+            .pmf_cfg = {
+                .required = false,
+            },
         },
     };
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+    esp_wifi_set_ps(WIFI_PS_NONE);
+    esp_wifi_set_max_tx_power(78); // Potencia máxima de transmisión RF (aprox 20 dBm)
 
     printf("\n===================================================================\n");
     printf("  [MODO SOFTAP ACTIVO] Red creada: %s\n", SOFTAP_SSID);
     printf("  1. Conéctate con tu celular a la red Wi-Fi: %s\n", SOFTAP_SSID);
+    printf("     Contraseña: %s\n", ap_config.ap.password);
     printf("  2. Abre en tu navegador la dirección: http://192.168.4.1\n");
     printf("  3. Ingresa tu red Wi-Fi y contraseña para conectar el aire.\n");
     printf("===================================================================\n\n");
@@ -296,6 +303,7 @@ esp_err_t wifi_manager_init(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     s_sta_netif = esp_netif_create_default_wifi_sta();
+    s_ap_netif  = esp_netif_create_default_wifi_ap();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -325,6 +333,7 @@ esp_err_t wifi_manager_init(void)
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
         ESP_ERROR_CHECK(esp_wifi_start());
+        esp_wifi_set_ps(WIFI_PS_NONE);
     } else {
         ESP_LOGW(TAG, "No hay credenciales Wi-Fi en NVS. Iniciando portal SoftAP por defecto...");
         wifi_manager_start_softap();

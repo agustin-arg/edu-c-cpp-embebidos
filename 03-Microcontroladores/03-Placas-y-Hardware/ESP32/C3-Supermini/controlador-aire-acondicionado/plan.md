@@ -149,8 +149,23 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 -   - Corrección crítica de comportamiento: el bit de Power Toggle solo se conmuta al ejecutar encendido/apagado, permitiendo cambios de temperatura y modo sin apagar el equipo.
 - - **Validación en Hardware Real**: Control paramétrico verificado exitosamente sobre el split Marshall (cambio de temperatura, modo, velocidad de fan y oscilación de swing respondiendo sin apagar la unidad).
  
-### 7.3 Siguiente Paso (Fase 3 / Fase 4)
- 
-Una vez garantizado el control total del aire acondicionado vía software nativo, el siguiente paso es la **conectividad Wi-Fi**:
-1. Conexión de red local e integración con el broker **MQTT** (Mosquitto en Raspberry Pi 4) para exponer el equipo a **Home Assistant** (`climate.mqtt`) y permitir control remoto vía teléfono/agentes como OpenClaw.
-2. Sincronización horaria con **SNTP** (`esp_netif_sntp`) para control autónomo programado por horarios locales.
+### 7.3 Hito en Progreso: Fase 3 (Gestión Wi-Fi Dinámica con NVS y SoftAP)
+
+- **Módulo `wifi_manager` implementado**:
+  - Persistencia de credenciales en almacenamiento no volátil (`nvs_flash`).
+  - Lógica de fallback: si no hay credenciales en NVS, activa automáticamente el modo SoftAP `Aire-Marshall-Setup` (WPA2-PSK `12345678`).
+  - Detección de pulsación prolongada en el botón físico BOOT (GPIO 9 > 3 segundos) para forzar el SoftAP en caliente en cualquier momento.
+  - Servidor web ligero embebido (`esp_http_server`) en el puerto 80 con página HTML de bienvenida (`/`) y endpoint de guardado (`/save`) con reinicio diferido.
+- **Observaciones y Diagnóstico de Hardware RF**:
+  - El stack TCP/IP y Wi-Fi de ESP-IDF v5.5 levanta correctamente el servicio SoftAP (servidor DHCP activo en `192.168.4.1`, evento `WIFI_EVENT_AP_START` verificado).
+  - En los módulos genéricos **ESP32-C3 SuperMini**, la antena integrada de cerámica presenta limitaciones físicas de ganancia en modo emisor de balizas SoftAP autónomo si no se utiliza antena externa.
+  - Como paso complementario, se evaluará la conexión en modo cliente (Station) directo hacia la red Wi-Fi hogareña para habilitar la Fase 4 (MQTT y API REST).
+
+---
+
+### 7.4 Siguiente Paso (Fase 4 / Fase 5)
+
+1. Conectar a la red Wi-Fi local y enlazar con el broker **MQTT** (Mosquitto en Raspberry Pi 4) para exponer el equipo a **Home Assistant** (`climate.mqtt`).
+2. Implementar los endpoints REST (`/api/status`, `/api/set`) para control por red local.
+3. Sincronización horaria con **SNTP** (`esp_netif_sntp`).
+4. Implementar feedback visual suave con LED PWM (`ledc`) en GPIO 2 (Fase 5).
