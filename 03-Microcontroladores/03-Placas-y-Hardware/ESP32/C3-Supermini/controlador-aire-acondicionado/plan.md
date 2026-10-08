@@ -70,28 +70,45 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 - Conversión precisa de tramas a símbolos de hardware RMT.
 - Integración en la interfaz de consola interactiva del microcontrolador.
 
-### Fase 3: Sincronización Horaria y Programación Local
+### Fase 3: Conectividad Wi-Fi Dinámica (SoftAP / Portal Cautivo por Botón) y SNTP
 
-**Objetivo**: Autonomía frente a cortes de red o reinicios.
+**Objetivo**: Conexión a red local sin credenciales hardcodeadas, cambio de red en caliente y sincronización horaria autónoma.
 
-- Conexión a red Wi-Fi y sincronización horaria mediante SNTP (`esp_netif_sntp`) con ajuste de zona horaria local (`TZ=ART3`).
-- Programador de eventos locales (`esp_cron` o timers FreeRTOS) para disparar acciones a horas específicas.
+- **Gestión de Red con NVS**:
+  - Al iniciar, el ESP32 intenta conectar al Wi-Fi almacenado en flash NVS.
+- **Activación Forzada de Modo SoftAP por Botón Físico**:
+  - Si el usuario **mantiene presionado el botón BOOT (GPIO 9)** durante >3 segundos (o si no hay credenciales / falla la conexión por timeout), el ESP conmuta a **Punto de Acceso (SoftAP)** emitiendo la red Wi-Fi `Aire-Marshall-Setup`.
+  - Servidor web temporal en `192.168.4.1` con escaneo de redes disponibles y formulario para guardar nuevo SSID y Contraseña en NVS.
+  - Al guardar, reinicia o reconecta automáticamente como Station a la nueva red.
+- **Sincronización Horaria SNTP**:
+  - Una vez en línea, sincroniza reloj con `esp_netif_sntp` ajustando zona horaria local (`TZ=ART3`).
 
-### Fase 4: Servidor REST y Orquestación MQTT / Home Assistant / OpenClaw
+### Fase 4: Servidor REST Local y Orquestación MQTT / Home Assistant / OpenClaw
 
-**Objetivo**: Integración con la Raspberry Pi 4 B (broker Mosquitto), interfaz web, Home Assistant y agentes como OpenClaw.
+**Objetivo**: Integración total en red local con interfaz web responsive, API JSON para Claude/OpenClaw y entidad climática en Home Assistant vía Raspberry Pi 4 B.
 
-- **Máquina de Estado Centralizada (RAM / NVS)**:
-  - Mantener una estructura de datos `ac_state_t` con el estado completo actual (encendido, modo, temp, fan, swing).
-  - Persistencia opcional en NVS para recuperar el estado ante reinicios imprevistos.
+- **Servidor Web y API REST Embebida (`esp_http_server`)**:
+  - Interfaz web simple y moderna servida desde el ESP32 (accesible desde navegador de celular o PC en la IP local o mDNS `aire-marshall.local`).
+  - Endpoints JSON:
+    - `GET /api/status`: Devuelve el JSON con el estado actual del aire.
+    - `POST /api/set`: Permite a scripts o agentes IA (Claude, OpenClaw) enviar comandos directos vía HTTP sin depender de broker.
 - **Cliente MQTT Bidireccional (`esp-mqtt`)**:
-  - **Suscripción (`.../set`)**: Recepción de órdenes atómicas o completas desde la interfaz, Home Assistant o OpenClaw. El ESP actualiza su estado interno y dispara la trama IR correspondiente.
-  - **Publicación Reactiva y Sincronización (`.../status`)**:
-    - **Escucha activa / Sniffing en segundo plano (GPIO 6)**: Al detectar una trama válida emitida por el control remoto físico DG11J1-01, el decodificador actualiza el estado interno del ESP32.
-    - Publica de inmediato el estado resultante en `aire/salon/status` en formato JSON, sincronizando en tiempo real la interfaz gráfica y OpenClaw.
-    - Mecanismo de inhibición transitoria de RX para evitar eco o bucle cerrado durante la transmisión propia (GPIO 0).
-  - Soporte para **Home Assistant MQTT Auto-Discovery** (entidad de tipo `climate`).
-- **API REST Local (Secundaria / Fallback)**: Servidor HTTP embebido (`esp_http_server`) para control directo sin broker.
+  - Conexión al broker Mosquitto en la Raspberry Pi 4 B.
+  - **Suscripción (`aire/living/set`)**: Recepción de órdenes desde Home Assistant o OpenClaw, actualizando estado interno y emitiendo trama IR.
+  - **Publicación Reactiva (`aire/living/status`)**: Sincronización en tiempo real ante órdenes remotas o capturas de control físico (GPIO 6).
+  - **Home Assistant MQTT Auto-Discovery**: Creación automática de la tarjeta `climate` en Home Assistant.
+
+### Fase 5: Detalles, Pulido y Refinamiento (Feedback Visual por LED PWM con Fade)
+
+**Objetivo**: Brindar feedback visual orgánico mediante el LED azul onboard (GPIO 2) usando modulación PWM (`ledc`) y efectos de desvanecimiento (*fading*):
+
+- **Periférico LEDC (PWM en GPIO 2)**:
+  - Generación de curvas suaves de brillo (difuminado/fading) en lugar de transiciones secas on/off.
+- **Patrones de Estado Distintivos**:
+  1. **Transmisión IR (TX)**: Ráfaga de parpadeos rápidos difuminados en secuencia mientras se emite al split.
+  2. **Recepción IR (RX Sniffer)**: Doble pulso suave difuminado a velocidad media (confirmación visual de lectura del control físico).
+  3. **Modo Configuración (SoftAP activo)**: Efecto "respiración" o parpadeo lento continuo (difuminado constante de 0 a 100% y descenso) indicando que el punto de acceso está abierto a la espera de credenciales.
+  4. **Conexión Normal / Reposo**: LED apagado para no molestar de noche en la habitación.
 
 ---
 
