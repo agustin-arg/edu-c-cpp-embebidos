@@ -12,6 +12,7 @@
 #include "driver/rmt_encoder.h"
 
 #include "dg11j1_protocol.h"
+#include "wifi_manager.h"
 
 static const char *TAG = "AC_CONTROLLER";
 
@@ -35,7 +36,8 @@ typedef enum {
     CMD_FAN_NEXT,
     CMD_POWER_TOGGLE,
     CMD_SWING_TOGGLE,
-    CMD_PRINT_STATUS
+    CMD_PRINT_STATUS,
+    CMD_START_SOFTAP
 } ui_action_t;
 
 // ==============================================================================
@@ -74,6 +76,8 @@ static bool IRAM_ATTR rmt_rx_done_callback(rmt_channel_handle_t channel, const r
 // ==============================================================================
 
 // Monitorea el botón físico BOOT (GPIO 9, activo en bajo)
+// Pulsación corta (<1.5s): Transmite comando actual por IR
+// Pulsación larga (>3s): Activa Modo SoftAP para reconfigurar Wi-Fi
 static void button_task(void *pvParameters)
 {
     gpio_config_t io_conf = {
@@ -85,17 +89,36 @@ static void button_task(void *pvParameters)
     };
     gpio_config(&io_conf);
 
-    int last_level = 1;
     while (1) {
-        int current_level = gpio_get_level(BOOT_BUTTON_GPIO);
-        if (last_level == 1 && current_level == 0) {
+        if (gpio_get_level(BOOT_BUTTON_GPIO) == 0) {
+            // Flanco de bajada detectado, debounce de 40ms
             vTaskDelay(pdMS_TO_TICKS(40));
             if (gpio_get_level(BOOT_BUTTON_GPIO) == 0) {
-                ui_action_t act = CMD_SEND_CURRENT;
-                xQueueSend(s_action_queue, &act, 0);
+                uint32_t press_ms = 0;
+                while (gpio_get_level(BOOT_BUTTON_GPIO) == 0) {
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    press_ms += 50;
+                    if (press_ms >= 3000) {
+                        // Pulsación larga superó los 3 segundos
+                        printf("\n[BOTON BOOT] Pulsación larga detectada (>3s) -> Activando Modo SoftAP...\n");
+                        ui_action_t act = CMD_START_SOFTAP;
+                        xQueueSend(s_action_queue, &act, 0);
+
+                        // Esperar a que el usuario suelte el botón para no redisparar
+                        while (gpio_get_level(BOOT_BUTTON_GPIO) == 0) {
+                            vTaskDelay(pdMS_TO_TICKS(100));
+                        }
+                        break;
+                    }
+                }
+
+                // Si se soltó antes de los 3 segundos y duró más de 50ms, es pulsación corta
+                if (press_ms > 50 && press_ms < 3000) {
+                    ui_action_t act = CMD_SEND_CURRENT;
+                    xQueueSend(s_action_queue, &act, 0);
+                }
             }
         }
-        last_level = current_level;
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
@@ -133,6 +156,10 @@ static void console_input_task(void *pvParameters)
                 case 's':
                 case 'S':
                     act = CMD_SWING_TOGGLE;
+                    break;
+                case 'w':
+                case 'W':
+                    act = CMD_START_SOFTAP;
                     break;
                 case 't':
                 case 'T':
@@ -247,7 +274,7 @@ static void transmit_current_state(void)
 static void print_help_menu(void)
 {
     printf("\n===================================================================\n");
-    printf("  CONTROLADOR INTELIGENTE AIRE ACONDICIONADO MARSHALL (Fase 2)   \n");
+    printf("  CONTROLADOR INTELIGENTE AIRE ACONDICIONADO MARSHALL (Fase 3)   \n");
     printf("===================================================================\n");
     printf("  [+] o [=] : Subir temperatura (+1 C)\n");
     printf("  [-] o [_] : Bajar temperatura (-1 C)\n");
@@ -255,7 +282,9 @@ static void print_help_menu(void)
     printf("  [f]       : Cambiar fan  (Auto -> Baja -> Media -> Alta)\n");
     printf("  [p]       : Encender / Apagar (Power Toggle)\n");
     printf("  [s]       : Alternar Swing (Oscilación)\n");
-    printf("  [t] / [ENTER] / Botón BOOT : ENVIAR comando IR al aire\n");
+    printf("  [w]       : Activar Modo SoftAP (Red 'Aire-Marshall-Setup')\n");
+    printf("  [t] / [ENTER] / Botón BOOT (corto): ENVIAR comando IR al aire\n");
+    printf("  Botón BOOT (mantener >3 seg)      : Activar Modo SoftAP / Wi-Fi\n");
     printf("  [h]       : Ver este menú y estado actual\n");
     printf("-------------------------------------------------------------------\n");
     dg11j1_print_state(&s_current_state);
@@ -277,6 +306,9 @@ void app_main(void)
     assert(s_action_queue != NULL);
 
     init_ir_subsystem();
+
+    // Inicializar subsistema Wi-Fi (conecta a NVS o arranca SoftAP de configuración)
+    wifi_manager_init();
 
     xTaskCreate(button_task, "button_task", 2048, NULL, 5, NULL);
     xTaskCreate(console_input_task, "console_task", 2048, NULL, 5, NULL);
@@ -316,6 +348,10 @@ void app_main(void)
             switch (action) {
                 case CMD_SEND_CURRENT:
                     transmit_current_state();
+                    break;
+
+                case CMD_START_SOFTAP:
+                    wifi_manager_start_softap();
                     break;
 
                 case CMD_TEMP_UP:
