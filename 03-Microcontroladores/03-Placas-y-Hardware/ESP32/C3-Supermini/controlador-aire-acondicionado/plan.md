@@ -163,6 +163,10 @@ Para garantizar un historial de commits limpio, atómico y consistente:
   - Retención de IP dinámica asignada (`wifi_manager_get_ip_str()`) y visualización en menú interactivo.
   - **Eficiencia de Memoria**: Al conectarse, `wifi_prov_mgr_deinit()` desactivó el controlador Bluetooth liberando toda la memoria RAM (`WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM`).
   - Persistencia total: credenciales guardadas en NVS, reconexión automática en reinicios o cortes de energía sin intervención manual.
+  - **Optimización de Coexistencia y Potencia RF (C3 SuperMini)**:
+    - Se resolvió el fallo de colisión transitoria durante aprovisionamiento BLE (`wifi:Coexist: Wi-Fi connect fail`) mediante `esp_coex_preference_set(ESP_COEX_PREFER_WIFI)`.
+    - Se limitó la potencia máxima RF a 12 dBm (48) para prevenir caídas de tensión en el regulador onboard de 3.3V y evitar micro-reseteos del USB CDC/JTAG.
+    - Se desactivó el modo modem sleep (`WIFI_PS_NONE`) y se añadió backoff de 2 segundos en reconexiones STA.
 
 ---
 

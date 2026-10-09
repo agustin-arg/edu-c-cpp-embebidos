@@ -11,6 +11,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
+#include "esp_coexist.h"
 
 #include <wifi_provisioning/manager.h>
 #include <wifi_provisioning/scheme_ble.h>
@@ -18,18 +19,21 @@
 
 static const char *TAG = "WIFI_MGR";
 
-#define PROV_DEVICE_PREFIX  "PROV_Aire_"
-#define PROV_POP_CODE        "12345678"
-#define WIFI_CONNECTED_BIT   BIT0
+#define PROV_DEVICE_PREFIX   "PROV_Aire_"
+#define PROV_POP_CODE         "12345678"
+#define WIFI_CONNECTED_BIT    BIT0
+
+// 48 = 12 dBm (48 * 0.25 dBm): previene picos de consumo >350mA en regulador y antena del C3 SuperMini
+#define C3_SUPERMINI_TX_POWER 48
 
 static EventGroupHandle_t s_wifi_event_group = NULL;
 static wifi_mgr_state_t   s_current_state = WIFI_MGR_STA_DISCONNECTED;
 static char               s_service_name[32] = {0};
 static char               s_ip_str[16] = "0.0.0.0";
+static bool               s_is_provisioned = false;
 
-// UUID de 128-bit estándar de Espressif para compatibilidad nativa con la app 'ESP BLE Provisioning'
+// UUID de 128-bit estándar de Espressif para la app oficial 'ESP BLE Provisioning'
 static const uint8_t s_custom_service_uuid[] = {
-    /* LSB <----------------------------------------------------------------- MSB */
     0xb4, 0xdf, 0x5a, 0x1c, 0x3f, 0x6b, 0xf4, 0xbf,
     0xea, 0x4a, 0x82, 0x03, 0x04, 0x90, 0x1a, 0x02,
 };
@@ -52,23 +56,21 @@ static void wifi_prov_event_handler(void *arg, esp_event_base_t event_base,
                 break;
             case WIFI_PROV_CRED_RECV: {
                 wifi_sta_config_t *sta_cfg = (wifi_sta_config_t *)event_data;
-                ESP_LOGI(TAG, "Credenciales Wi-Fi recibidas desde app celular:");
-                ESP_LOGI(TAG, "  SSID    : %s", (const char *)sta_cfg->ssid);
-                ESP_LOGI(TAG, "  Password: [RECIBIDA]");
+                ESP_LOGI(TAG, "Credenciales Wi-Fi recibidas desde app celular: SSID '%s'", (const char *)sta_cfg->ssid);
                 break;
             }
             case WIFI_PROV_CRED_FAIL: {
                 wifi_prov_sta_fail_reason_t *reason = (wifi_prov_sta_fail_reason_t *)event_data;
-                ESP_LOGE(TAG, "Fallo al conectar con credenciales provistas: %s",
-                         (*reason == WIFI_PROV_STA_AUTH_ERROR) ?
-                         "Clave incorrecta (Auth Error)" : "Red Wi-Fi no encontrada");
+                ESP_LOGE(TAG, "Fallo en aprovisionamiento: %s",
+                         (*reason == WIFI_PROV_STA_AUTH_ERROR) ? "Clave incorrecta" : "Red Wi-Fi no encontrada");
                 break;
             }
             case WIFI_PROV_CRED_SUCCESS:
                 ESP_LOGI(TAG, "¡Conexión Wi-Fi exitosa con las credenciales provistas!");
+                s_is_provisioned = true;
                 break;
             case WIFI_PROV_END:
-                ESP_LOGI(TAG, "Aprovisionamiento finalizado. Liberando memoria BLE y deteniendo manager.");
+                ESP_LOGI(TAG, "Aprovisionamiento finalizado. Liberando memoria BLE.");
                 wifi_prov_mgr_deinit();
                 break;
             default:
@@ -77,13 +79,19 @@ static void wifi_prov_event_handler(void *arg, esp_event_base_t event_base,
     } else if (event_base == WIFI_EVENT) {
         switch (event_id) {
             case WIFI_EVENT_STA_START:
+                esp_wifi_set_ps(WIFI_PS_NONE);
+                esp_wifi_set_max_tx_power(C3_SUPERMINI_TX_POWER);
                 s_current_state = WIFI_MGR_STA_CONNECTING;
-                esp_wifi_connect();
+                if (s_is_provisioned) {
+                    esp_wifi_connect();
+                }
                 break;
             case WIFI_EVENT_STA_DISCONNECTED:
-                ESP_LOGW(TAG, "Wi-Fi desconectado. Intentando reconectar...");
                 s_current_state = WIFI_MGR_STA_DISCONNECTED;
-                esp_wifi_connect();
+                if (s_is_provisioned) {
+                    ESP_LOGW(TAG, "Wi-Fi desconectado. Intentando reconectar...");
+                    esp_wifi_connect();
+                }
                 break;
             default:
                 break;
@@ -137,28 +145,41 @@ esp_err_t wifi_manager_init(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
+    // Configuración regulatoria para Argentina (canales 1 a 13)
+    wifi_country_t country = {
+        .cc = "AR",
+        .schan = 1,
+        .nchan = 13,
+        .max_tx_power = C3_SUPERMINI_TX_POWER,
+        .policy = WIFI_COUNTRY_POLICY_AUTO
+    };
+    esp_wifi_set_country(&country);
+
+    // Priorizar tráfico Wi-Fi frente a BLE en el arbitraje de coexistencia de radio
+    esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
+
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_PROV_EVENT, ESP_EVENT_ANY_ID, &wifi_prov_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(PROTOCOMM_TRANSPORT_BLE_EVENT, ESP_EVENT_ANY_ID, &wifi_prov_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_prov_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_prov_event_handler, NULL));
 
-    // Inicializar el gestor de aprovisionamiento una sola vez
+    // Inicializar el gestor de aprovisionamiento con liberación automática de memoria Bluetooth
     wifi_prov_mgr_config_t config = {
         .scheme = wifi_prov_scheme_ble,
         .scheme_event_handler = WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM
     };
     ESP_ERROR_CHECK(wifi_prov_mgr_init(config));
 
-    bool provisioned = false;
-    ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&provisioned));
+    ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&s_is_provisioned));
 
-    if (provisioned) {
+    if (s_is_provisioned) {
         ESP_LOGI(TAG, "Dispositivo ya aprovisionado. Liberando stack BLE y arrancando Wi-Fi STA...");
         wifi_prov_mgr_deinit();
 
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
         ESP_ERROR_CHECK(esp_wifi_start());
         esp_wifi_set_ps(WIFI_PS_NONE);
+        esp_wifi_set_max_tx_power(C3_SUPERMINI_TX_POWER);
     } else {
         ESP_LOGW(TAG, "Dispositivo no aprovisionado. Levantando servicio BLE Provisioning...");
 
