@@ -70,7 +70,7 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 - Conversión precisa de tramas a símbolos de hardware RMT.
 - Integración en la interfaz de consola interactiva del microcontrolador.
 
-### Fase 3: Conectividad Wi-Fi Dinámica (Aprovisionamiento por BLE con NimBLE) y SNTP
+### Fase 3: Conectividad Wi-Fi Dinámica (Aprovisionamiento por BLE con NimBLE) y SNTP (Completada)
 
 **Objetivo**: Conexión a red local sin credenciales hardcodeadas, configuración amigable desde celular mediante BLE y sincronización horaria autónoma.
 
@@ -170,14 +170,35 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 
 ---
 
-### 7.4 Siguiente Paso (Fase 4: API REST, Sincronización SNTP y MQTT / Home Assistant)
+### 7.4 Hito Alcanzado: Sincronización Horaria SNTP (ART3) Superada con Éxito
 
-1. **Sincronización Horaria (SNTP)**: Sincronizar reloj de pared con `esp_netif_sntp` ajustando zona horaria local (`ART3` / UTC-3).
-2. **Servidor HTTP y API REST Local (`esp_http_server`)**:
+- **Módulo de Tiempo (`time_manager.h` / `.c`)**:
+  - Implementación de cliente SNTP nativo con servidores `pool.ntp.org` vía `esp_netif_sntp`.
+  - Configuración automática de zona horaria de Argentina (`TZ=ART3` / UTC-3).
+  - Callback síncrono `time_sync_notification_cb` que notifica la hora sincronizada en tiempo real.
+  - Integración en el menú interactivo de consola mostrando hora real sincronizada (formato `HH:MM:SS`).
+
+### 7.5 Hito Alcanzado: Blindaje de Arranque y Supresión de Ráfagas Espurias IR
+
+- **Diagnóstico de Arranque**:
+  - En el ESP32-C3, el pin GPIO 9 (botón BOOT) es un strapping pin que transiciona por nivel bajo durante la secuencia de reset/arranque por hardware.
+  - La tarea de lectura de botón interpretaba el transitorio como una pulsación corta (<3s), disparando involuntariamente una transmisión IR completa al encender.
+  - Adicionalmente, secuencias CRLF residuales en el monitor serial disparaban transmisiones debido al mapeo de `\r` / `\n` en la consola interactiva.
+- **Solución y Validación**:
+  - `button_task`: Espera de estabilización en nivel ALTO de GPIO 9 al boot y elevación de umbral de filtrado a $\ge 120\text{ ms}$.
+  - `console_input_task`: Eliminación de saltos de línea y espacios; disparo de transmisión restringido exclusivamente a la tecla `'t'`/`'T'`.
+  - Protección de cola con `CMD_NONE = 0` y forzado de niveles inactivos en bajo en el canal RMT (`init_level = 0`, `eot_level = 0`).
+  - Verificado en hardware real: arranque 100% silencioso y sin destellos espurios, manteniendo operatividad total ante pulsaciones manuales intencionales.
+
+---
+
+### 7.6 Siguientes Pasos (Fase 4: API REST Local y Orquestación MQTT / Home Assistant)
+
+1. **Servidor HTTP y API REST Local (`esp_http_server`)**:
    - `GET /api/status`: Estado actual del split y red en formato JSON.
    - `POST /api/set`: Recepción de comandos remotos en JSON (temp, modo, fan, swing, power).
-3. **Cliente MQTT (`esp-mqtt`)**:
+2. **Cliente MQTT Bidireccional (`esp-mqtt`)**:
    - Conexión al broker Mosquitto en la Raspberry Pi 4 B.
    - Publicación de estado y suscripción a órdenes (`aire/living/set`).
    - Auto-Discovery MQTT para integración nativa como entidad `climate` en Home Assistant.
-4. **Fase 5 (Refinamiento)**: Efectos visuales de LED PWM difuminado (`ledc` en GPIO 2).
+3. **Fase 5 (Refinamiento)**: Efectos visuales de LED PWM difuminado (`ledc` en GPIO 2).
