@@ -13,6 +13,7 @@
 
 #include "dg11j1_protocol.h"
 #include "wifi_manager.h"
+#include "time_manager.h"
 
 static const char *TAG = "AC_CONTROLLER";
 
@@ -276,7 +277,7 @@ static void transmit_current_state(void)
 static void print_help_menu(void)
 {
     printf("\n===================================================================\n");
-    printf("  CONTROLADOR INTELIGENTE AIRE ACONDICIONADO MARSHALL (Fase 3)   \n");
+    printf("  CONTROLADOR INTELIGENTE AIRE ACONDICIONADO MARSHALL (Fase 4 - SNTP)\n");
     printf("===================================================================\n");
     printf("  [+] o [=] : Subir temperatura (+1 C)\n");
     printf("  [-] o [_] : Bajar temperatura (-1 C)\n");
@@ -293,6 +294,10 @@ static void print_help_menu(void)
     printf("  Wi-Fi: %s (IP: %s)\n",
            wifi_manager_is_connected() ? "CONECTADO" : "DESCONECTADO / APROVISIONANDO",
            wifi_manager_get_ip_str());
+    char time_str[32];
+    time_manager_get_time_str(time_str, sizeof(time_str));
+    printf("  Hora : %s (%s)\n", time_str,
+           time_manager_is_synced() ? "Sincronizado NTP (ART3)" : "Sin sincronizar");
     printf("-------------------------------------------------------------------\n");
     printf("  [SNIFFER ACTIVO]: Si presionas cualquier botón en tu control físico\n");
     printf("  DG11J1-01 apuntando al TSOP (GPIO %d), se actualizará en tiempo real.\n", IR_RX_GPIO);

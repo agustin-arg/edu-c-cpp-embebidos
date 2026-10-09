@@ -14,6 +14,7 @@
 
 #include <wifi_provisioning/manager.h>
 #include <wifi_provisioning/scheme_ble.h>
+#include "time_manager.h"
 
 static const char *TAG = "WIFI_MGR";
 
@@ -92,6 +93,7 @@ static void wifi_prov_event_handler(void *arg, esp_event_base_t event_base,
         snprintf(s_ip_str, sizeof(s_ip_str), IPSTR, IP2STR(&event->ip_info.ip));
         ESP_LOGI(TAG, ">>> ¡CONECTADO A WI-FI! IP Asignada: %s <<<", s_ip_str);
         s_current_state = WIFI_MGR_STA_CONNECTED;
+        time_manager_init();
         if (s_wifi_event_group) {
             xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         }
