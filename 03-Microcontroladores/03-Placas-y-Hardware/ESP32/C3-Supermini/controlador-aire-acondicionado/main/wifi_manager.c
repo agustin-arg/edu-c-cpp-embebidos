@@ -10,282 +10,108 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "nvs.h"
 #include "esp_netif.h"
-#include "esp_http_server.h"
+
+#include <wifi_provisioning/manager.h>
+#include <wifi_provisioning/scheme_ble.h>
 
 static const char *TAG = "WIFI_MGR";
 
-#define NVS_NAMESPACE       "wifi_cfg"
-#define NVS_KEY_SSID        "ssid"
-#define NVS_KEY_PASS        "pass"
-
-#define SOFTAP_SSID         "Aire-Marshall-Setup"
-#define SOFTAP_PASS         "12345678"
-#define SOFTAP_MAX_CONN     4
-#define WIFI_CONNECTED_BIT  BIT0
-#define WIFI_FAIL_BIT       BIT1
-#define MAX_RETRY_COUNT     5
+#define PROV_DEVICE_PREFIX  "PROV_Aire_"
+#define PROV_POP_CODE        "12345678"
+#define WIFI_CONNECTED_BIT   BIT0
 
 static EventGroupHandle_t s_wifi_event_group = NULL;
-static int s_retry_num = 0;
-static wifi_mgr_state_t s_current_state = WIFI_MGR_STA_DISCONNECTED;
+static wifi_mgr_state_t   s_current_state = WIFI_MGR_STA_DISCONNECTED;
+static char               s_service_name[32] = {0};
 
-static esp_netif_t *s_sta_netif = NULL;
-static esp_netif_t *s_ap_netif = NULL;
-static httpd_handle_t s_http_server = NULL;
+// UUID de 128-bit estándar de Espressif para compatibilidad nativa con la app 'ESP BLE Provisioning'
+static const uint8_t s_custom_service_uuid[] = {
+    /* LSB <----------------------------------------------------------------- MSB */
+    0xb4, 0xdf, 0x5a, 0x1c, 0x3f, 0x6b, 0xf4, 0xbf,
+    0xea, 0x4a, 0x82, 0x03, 0x04, 0x90, 0x1a, 0x02,
+};
 
-static char s_saved_ssid[33] = {0};
-static char s_saved_pass[65] = {0};
-
-// ==============================================================================
-// 1. MANEJO DE NVS (ALMACENAMIENTO PERMANENTE)
-// ==============================================================================
-static esp_err_t load_credentials_from_nvs(char *ssid, size_t ssid_len, char *pass, size_t pass_len)
+static void get_device_service_name(char *service_name, size_t max)
 {
-    nvs_handle_t handle;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    size_t required_ssid = ssid_len;
-    err = nvs_get_str(handle, NVS_KEY_SSID, ssid, &required_ssid);
-    if (err == ESP_OK) {
-        size_t required_pass = pass_len;
-        err = nvs_get_str(handle, NVS_KEY_PASS, pass, &required_pass);
-    }
-
-    nvs_close(handle);
-    return err;
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(service_name, max, "%s%02X%02X", PROV_DEVICE_PREFIX, mac[4], mac[5]);
 }
 
-static esp_err_t save_credentials_to_nvs(const char *ssid, const char *pass)
+static void wifi_prov_event_handler(void *arg, esp_event_base_t event_base,
+                                   int32_t event_id, void *event_data)
 {
-    nvs_handle_t handle;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    err = nvs_set_str(handle, NVS_KEY_SSID, ssid);
-    if (err == ESP_OK) {
-        err = nvs_set_str(handle, NVS_KEY_PASS, pass);
-    }
-    if (err == ESP_OK) {
-        err = nvs_commit(handle);
-    }
-
-    nvs_close(handle);
-    return err;
-}
-
-// ==============================================================================
-// 2. PORTAL WEB DE CONFIGURACIÓN (SOFTAP)
-// ==============================================================================
-static const char HTML_CONFIG_PAGE[] =
-"<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-"<title>Aire Marshall - Configuración Wi-Fi</title>"
-"<style>"
-"body{font-family:sans-serif;margin:0;padding:20px;background:#f0f2f5;display:flex;justify-content:center;align-items:center;min-height:90vh;}"
-".card{background:#fff;padding:25px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.1);max-width:380px;width:100%;}"
-"h2{margin-top:0;color:#1e3c72;text-align:center;}"
-"p{color:#666;font-size:14px;line-height:1.4;text-align:center;}"
-"label{font-weight:bold;font-size:13px;display:block;margin-top:15px;color:#333;}"
-"input[type=text],input[type=password]{width:100%;box-sizing:border-box;padding:12px;margin-top:6px;border:1px solid #ccc;border-radius:8px;font-size:15px;}"
-"input[type=submit]{width:100%;background:#1e3c72;color:#fff;border:none;padding:14px;border-radius:8px;font-size:16px;font-weight:bold;margin-top:22px;cursor:pointer;}"
-"input[type=submit]:hover{background:#2a5298;}"
-".footer{margin-top:20px;text-align:center;font-size:12px;color:#999;}"
-"</style></head><body>"
-"<div class='card'>"
-"<h2>❄️ Aire Marshall</h2>"
-"<p>Conecta el controlador a tu red Wi-Fi hogareña para habilitar el control remoto.</p>"
-"<form action='/save' method='POST'>"
-"<label for='ssid'>Nombre de Red Wi-Fi (SSID):</label>"
-"<input type='text' id='ssid' name='ssid' required placeholder='Ej: Mi_Fibertel_2.4G'>"
-"<label for='pass'>Contraseña:</label>"
-"<input type='password' id='pass' name='pass' placeholder='Contraseña de tu red'>"
-"<input type='submit' value='Guardar y Conectar'>"
-"</form>"
-"<div class='footer'>ESP32-C3 SuperMini • Controlador Marshall</div>"
-"</div></body></html>";
-
-static const char HTML_SUCCESS_PAGE[] =
-"<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-"<title>Guardado Exitoso</title>"
-"<style>"
-"body{font-family:sans-serif;margin:0;padding:20px;background:#e8f5e9;display:flex;justify-content:center;align-items:center;min-height:90vh;}"
-".card{background:#fff;padding:25px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.1);max-width:380px;width:100%;text-align:center;}"
-"h2{color:#2e7d32;margin-top:0;}"
-"p{color:#555;font-size:14px;line-height:1.5;}"
-"</style></head><body>"
-"<div class='card'>"
-"<h2>✅ ¡Credenciales Guardadas!</h2>"
-"<p>El controlador se reiniciará e intentará conectarse a tu red Wi-Fi.</p>"
-"<p>Ya puedes volver a conectarte a tu red habitual.</p>"
-"</div></body></html>";
-
-static esp_err_t root_get_handler(httpd_req_t *req)
-{
-    httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, HTML_CONFIG_PAGE, HTTPD_RESP_USE_STRLEN);
-}
-
-static void delayed_restart_task(void *pvParameters)
-{
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    esp_restart();
-}
-
-static esp_err_t save_post_handler(httpd_req_t *req)
-{
-    char buf[200] = {0};
-    int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
-    if (ret <= 0) {
-        return ESP_FAIL;
-    }
-
-    char new_ssid[33] = {0};
-    char new_pass[65] = {0};
-
-    char *p_ssid = strstr(buf, "ssid=");
-    char *p_pass = strstr(buf, "pass=");
-
-    if (p_ssid) {
-        p_ssid += 5;
-        char *amp = strchr(p_ssid, '&');
-        if (amp) *amp = '\0';
-        for (char *c = p_ssid; *c; c++) if (*c == '+') *c = ' ';
-        strncpy(new_ssid, p_ssid, sizeof(new_ssid) - 1);
-    }
-
-    if (p_pass) {
-        p_pass += 5;
-        char *amp = strchr(p_pass, '&');
-        if (amp) *amp = '\0';
-        for (char *c = p_pass; *c; c++) if (*c == '+') *c = ' ';
-        strncpy(new_pass, p_pass, sizeof(new_pass) - 1);
-    }
-
-    ESP_LOGI(TAG, "Nuevas credenciales recibidas: SSID='%s'", new_ssid);
-
-    if (strlen(new_ssid) > 0) {
-        save_credentials_to_nvs(new_ssid, new_pass);
-        httpd_resp_set_type(req, "text/html");
-        httpd_resp_send(req, HTML_SUCCESS_PAGE, HTTPD_RESP_USE_STRLEN);
-
-        xTaskCreate(delayed_restart_task, "restart_task", 2048, NULL, 5, NULL);
-        return ESP_OK;
-    }
-
-    httpd_resp_send_500(req);
-    return ESP_FAIL;
-}
-
-static void start_web_config_server(void)
-{
-    if (s_http_server != NULL) return;
-
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 8;
-
-    if (httpd_start(&s_http_server, &config) == ESP_OK) {
-        httpd_uri_t root_uri = {
-            .uri       = "/",
-            .method    = HTTP_GET,
-            .handler   = root_get_handler,
-            .user_ctx  = NULL
-        };
-        httpd_register_uri_handler(s_http_server, &root_uri);
-
-        httpd_uri_t save_uri = {
-            .uri       = "/save",
-            .method    = HTTP_POST,
-            .handler   = save_post_handler,
-            .user_ctx  = NULL
-        };
-        httpd_register_uri_handler(s_http_server, &save_uri);
-
-        ESP_LOGI(TAG, "Servidor web de configuración activo en puerto 80.");
-    }
-}
-
-// ==============================================================================
-// 3. EVENT HANDLER Y CONTROL DE ESTADOS WI-FI
-// ==============================================================================
-static void wifi_event_handler(void *arg, esp_event_base_t event_base,
-                               int32_t event_id, void *event_data)
-{
-    if (event_base == WIFI_EVENT) {
-        if (event_id == WIFI_EVENT_STA_START) {
-            s_current_state = WIFI_MGR_STA_CONNECTING;
-            esp_wifi_connect();
-        } else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
-            if (s_current_state != WIFI_MGR_SOFTAP_ACTIVE) {
-                if (s_retry_num < MAX_RETRY_COUNT) {
-                    s_retry_num++;
-                    ESP_LOGI(TAG, "Reintentando conexión Wi-Fi (%d/%d)...", s_retry_num, MAX_RETRY_COUNT);
-                    vTaskDelay(pdMS_TO_TICKS(1000));
-                    esp_wifi_connect();
-                } else {
-                    ESP_LOGW(TAG, "Fallo al conectar a '%s'. Iniciando SoftAP de rescate...", s_saved_ssid);
-                    xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-                    wifi_manager_start_softap();
-                }
+    if (event_base == WIFI_PROV_EVENT) {
+        switch (event_id) {
+            case WIFI_PROV_START:
+                ESP_LOGI(TAG, "Aprovisionamiento BLE iniciado.");
+                s_current_state = WIFI_MGR_PROV_BLE_ACTIVE;
+                break;
+            case WIFI_PROV_CRED_RECV: {
+                wifi_sta_config_t *sta_cfg = (wifi_sta_config_t *)event_data;
+                ESP_LOGI(TAG, "Credenciales Wi-Fi recibidas desde app celular:");
+                ESP_LOGI(TAG, "  SSID    : %s", (const char *)sta_cfg->ssid);
+                ESP_LOGI(TAG, "  Password: [RECIBIDA]");
+                break;
             }
-        } else if (event_id == WIFI_EVENT_AP_STACONNECTED) {
-            wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *)event_data;
-            ESP_LOGI(TAG, "Dispositivo conectado al SoftAP: MAC=" MACSTR ", AID=%d",
-                     MAC2STR(event->mac), event->aid);
-        } else if (event_id == WIFI_EVENT_AP_START) {
-            ESP_LOGI(TAG, ">>> Evento: SoftAP iniciado correctamente en el hardware RF! <<<");
+            case WIFI_PROV_CRED_FAIL: {
+                wifi_prov_sta_fail_reason_t *reason = (wifi_prov_sta_fail_reason_t *)event_data;
+                ESP_LOGE(TAG, "Fallo al conectar con credenciales provistas: %s",
+                         (*reason == WIFI_PROV_STA_AUTH_ERROR) ?
+                         "Clave incorrecta (Auth Error)" : "Red Wi-Fi no encontrada");
+                break;
+            }
+            case WIFI_PROV_CRED_SUCCESS:
+                ESP_LOGI(TAG, "¡Conexión Wi-Fi exitosa con las credenciales provistas!");
+                break;
+            case WIFI_PROV_END:
+                ESP_LOGI(TAG, "Aprovisionamiento finalizado. Liberando memoria BLE y deteniendo manager.");
+                wifi_prov_mgr_deinit();
+                break;
+            default:
+                break;
+        }
+    } else if (event_base == WIFI_EVENT) {
+        switch (event_id) {
+            case WIFI_EVENT_STA_START:
+                s_current_state = WIFI_MGR_STA_CONNECTING;
+                esp_wifi_connect();
+                break;
+            case WIFI_EVENT_STA_DISCONNECTED:
+                ESP_LOGW(TAG, "Wi-Fi desconectado. Intentando reconectar...");
+                s_current_state = WIFI_MGR_STA_DISCONNECTED;
+                esp_wifi_connect();
+                break;
+            default:
+                break;
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        ESP_LOGI(TAG, ">>> CONECTADO A WI-FI! IP: " IPSTR " <<<", IP2STR(&event->ip_info.ip));
-        s_retry_num = 0;
+        ESP_LOGI(TAG, ">>> ¡CONECTADO A WI-FI! IP Asignada: " IPSTR " <<<", IP2STR(&event->ip_info.ip));
         s_current_state = WIFI_MGR_STA_CONNECTED;
-        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        if (s_wifi_event_group) {
+            xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        }
+    } else if (event_base == PROTOCOMM_TRANSPORT_BLE_EVENT) {
+        switch (event_id) {
+            case PROTOCOMM_TRANSPORT_BLE_CONNECTED:
+                ESP_LOGI(TAG, "Dispositivo celular conectado por BLE.");
+                break;
+            case PROTOCOMM_TRANSPORT_BLE_DISCONNECTED:
+                ESP_LOGI(TAG, "Dispositivo celular desconectado de BLE.");
+                break;
+            default:
+                break;
+        }
     }
 }
 
-void wifi_manager_start_softap(void)
+void wifi_manager_start_ble_provisioning(void)
 {
-    ESP_LOGI(TAG, "Activando Modo SoftAP: '%s'...", SOFTAP_SSID);
-
-    s_current_state = WIFI_MGR_SOFTAP_ACTIVE;
-
-    wifi_config_t ap_config = {
-        .ap = {
-            .ssid = SOFTAP_SSID,
-            .ssid_len = strlen(SOFTAP_SSID),
-            .channel = 6,
-            .password = SOFTAP_PASS,
-            .max_connection = SOFTAP_MAX_CONN,
-            .authmode = WIFI_AUTH_WPA2_PSK,
-            .ssid_hidden = 0,
-            .beacon_interval = 100,
-            .pmf_cfg = {
-                .required = false,
-            },
-        },
-    };
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-    esp_wifi_set_ps(WIFI_PS_NONE);
-    esp_wifi_set_max_tx_power(78); // Potencia máxima de transmisión RF (aprox 20 dBm)
-
-    printf("\n===================================================================\n");
-    printf("  [MODO SOFTAP ACTIVO] Red creada: %s\n", SOFTAP_SSID);
-    printf("  1. Conéctate con tu celular a la red Wi-Fi: %s\n", SOFTAP_SSID);
-    printf("     Contraseña: %s\n", ap_config.ap.password);
-    printf("  2. Abre en tu navegador la dirección: http://192.168.4.1\n");
-    printf("  3. Ingresa tu red Wi-Fi y contraseña para conectar el aire.\n");
-    printf("===================================================================\n\n");
-
-    start_web_config_server();
+    ESP_LOGW(TAG, "Reinicio de aprovisionamiento solicitado por usuario.");
+    wifi_prov_mgr_reset_provisioning();
+    esp_restart();
 }
 
 esp_err_t wifi_manager_init(void)
@@ -302,41 +128,54 @@ esp_err_t wifi_manager_init(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    s_sta_netif = esp_netif_create_default_wifi_sta();
-    s_ap_netif  = esp_netif_create_default_wifi_ap();
+    esp_netif_create_default_wifi_sta();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
-                                                        ESP_EVENT_ANY_ID,
-                                                        &wifi_event_handler,
-                                                        NULL,
-                                                        NULL));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                        IP_EVENT_STA_GOT_IP,
-                                                        &wifi_event_handler,
-                                                        NULL,
-                                                        NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_PROV_EVENT, ESP_EVENT_ANY_ID, &wifi_prov_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(PROTOCOMM_TRANSPORT_BLE_EVENT, ESP_EVENT_ANY_ID, &wifi_prov_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_prov_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_prov_event_handler, NULL));
 
-    // Intentar leer credenciales guardadas en NVS
-    esp_err_t nvs_err = load_credentials_from_nvs(s_saved_ssid, sizeof(s_saved_ssid),
-                                                 s_saved_pass, sizeof(s_saved_pass));
+    // Inicializar el gestor de aprovisionamiento una sola vez
+    wifi_prov_mgr_config_t config = {
+        .scheme = wifi_prov_scheme_ble,
+        .scheme_event_handler = WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM
+    };
+    ESP_ERROR_CHECK(wifi_prov_mgr_init(config));
 
-    if (nvs_err == ESP_OK && strlen(s_saved_ssid) > 0) {
-        ESP_LOGI(TAG, "Credenciales encontradas en NVS para red '%s'. Intentando conexión...", s_saved_ssid);
-        wifi_config_t wifi_config = {0};
-        strncpy((char *)wifi_config.sta.ssid, s_saved_ssid, sizeof(wifi_config.sta.ssid));
-        strncpy((char *)wifi_config.sta.password, s_saved_pass, sizeof(wifi_config.sta.password));
-        wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    bool provisioned = false;
+    ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&provisioned));
+
+    if (provisioned) {
+        ESP_LOGI(TAG, "Dispositivo ya aprovisionado. Liberando stack BLE y arrancando Wi-Fi STA...");
+        wifi_prov_mgr_deinit();
 
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
         ESP_ERROR_CHECK(esp_wifi_start());
         esp_wifi_set_ps(WIFI_PS_NONE);
     } else {
-        ESP_LOGW(TAG, "No hay credenciales Wi-Fi en NVS. Iniciando portal SoftAP por defecto...");
-        wifi_manager_start_softap();
+        ESP_LOGW(TAG, "Dispositivo no aprovisionado. Levantando servicio BLE Provisioning...");
+
+        get_device_service_name(s_service_name, sizeof(s_service_name));
+        wifi_prov_scheme_ble_set_service_uuid(s_custom_service_uuid);
+
+        wifi_prov_security_t security = WIFI_PROV_SECURITY_1;
+        const char *pop = PROV_POP_CODE;
+        wifi_prov_security1_params_t *sec_params = (wifi_prov_security1_params_t *)pop;
+
+        ESP_ERROR_CHECK(wifi_prov_mgr_start_provisioning(security, (const void *)sec_params, s_service_name, NULL));
+
+        printf("\n===================================================================\n");
+        printf("  [APROVISIONAMIENTO BLE ACTIVO]\n");
+        printf("  1. Abre en tu celular la app oficial 'ESP BLE Provisioning'\n");
+        printf("     (disponible en Google Play Store / Apple App Store).\n");
+        printf("  2. Busca dispositivos BLE con el prefijo: %s\n", s_service_name);
+        printf("  3. Ingresa la clave PoP (Proof of Possession): %s\n", PROV_POP_CODE);
+        printf("  4. Selecciona tu red Wi-Fi y coloca la contraseña.\n");
+        printf("  (Una vez conectado, BLE se apagará automáticamente liberando memoria)\n");
+        printf("===================================================================\n\n");
     }
 
     return ESP_OK;

@@ -37,7 +37,7 @@ typedef enum {
     CMD_POWER_TOGGLE,
     CMD_SWING_TOGGLE,
     CMD_PRINT_STATUS,
-    CMD_START_SOFTAP
+    CMD_START_BLE_PROV
 } ui_action_t;
 
 // ==============================================================================
@@ -100,8 +100,8 @@ static void button_task(void *pvParameters)
                     press_ms += 50;
                     if (press_ms >= 3000) {
                         // Pulsación larga superó los 3 segundos
-                        printf("\n[BOTON BOOT] Pulsación larga detectada (>3s) -> Activando Modo SoftAP...\n");
-                        ui_action_t act = CMD_START_SOFTAP;
+                        printf("\n[BOTON BOOT] Pulsación larga detectada (>3s) -> Reiniciando Aprovisionamiento BLE...\n");
+                        ui_action_t act = CMD_START_BLE_PROV;
                         xQueueSend(s_action_queue, &act, 0);
 
                         // Esperar a que el usuario suelte el botón para no redisparar
@@ -157,9 +157,11 @@ static void console_input_task(void *pvParameters)
                 case 'S':
                     act = CMD_SWING_TOGGLE;
                     break;
+                case 'b':
+                case 'B':
                 case 'w':
                 case 'W':
-                    act = CMD_START_SOFTAP;
+                    act = CMD_START_BLE_PROV;
                     break;
                 case 't':
                 case 'T':
@@ -282,9 +284,9 @@ static void print_help_menu(void)
     printf("  [f]       : Cambiar fan  (Auto -> Baja -> Media -> Alta)\n");
     printf("  [p]       : Encender / Apagar (Power Toggle)\n");
     printf("  [s]       : Alternar Swing (Oscilación)\n");
-    printf("  [w]       : Activar Modo SoftAP (Red 'Aire-Marshall-Setup')\n");
+    printf("  [b] / [w] : Reconfigurar Wi-Fi (Modo Aprovisionamiento BLE)\n");
     printf("  [t] / [ENTER] / Botón BOOT (corto): ENVIAR comando IR al aire\n");
-    printf("  Botón BOOT (mantener >3 seg)      : Activar Modo SoftAP / Wi-Fi\n");
+    printf("  Botón BOOT (mantener >3 seg)      : Reconfigurar Wi-Fi por BLE\n");
     printf("  [h]       : Ver este menú y estado actual\n");
     printf("-------------------------------------------------------------------\n");
     dg11j1_print_state(&s_current_state);
@@ -350,8 +352,8 @@ void app_main(void)
                     transmit_current_state();
                     break;
 
-                case CMD_START_SOFTAP:
-                    wifi_manager_start_softap();
+                case CMD_START_BLE_PROV:
+                    wifi_manager_start_ble_provisioning();
                     break;
 
                 case CMD_TEMP_UP:

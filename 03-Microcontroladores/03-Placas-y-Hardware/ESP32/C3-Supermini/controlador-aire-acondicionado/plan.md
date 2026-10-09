@@ -70,16 +70,18 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 - Conversión precisa de tramas a símbolos de hardware RMT.
 - Integración en la interfaz de consola interactiva del microcontrolador.
 
-### Fase 3: Conectividad Wi-Fi Dinámica (SoftAP / Portal Cautivo por Botón) y SNTP
+### Fase 3: Conectividad Wi-Fi Dinámica (Aprovisionamiento por BLE con NimBLE) y SNTP
 
-**Objetivo**: Conexión a red local sin credenciales hardcodeadas, cambio de red en caliente y sincronización horaria autónoma.
+**Objetivo**: Conexión a red local sin credenciales hardcodeadas, configuración amigable desde celular mediante BLE y sincronización horaria autónoma.
 
-- **Gestión de Red con NVS**:
-  - Al iniciar, el ESP32 intenta conectar al Wi-Fi almacenado en flash NVS.
-- **Activación Forzada de Modo SoftAP por Botón Físico**:
-  - Si el usuario **mantiene presionado el botón BOOT (GPIO 9)** durante >3 segundos (o si no hay credenciales / falla la conexión por timeout), el ESP conmuta a **Punto de Acceso (SoftAP)** emitiendo la red Wi-Fi `Aire-Marshall-Setup`.
-  - Servidor web temporal en `192.168.4.1` con escaneo de redes disponibles y formulario para guardar nuevo SSID y Contraseña en NVS.
-  - Al guardar, reinicia o reconecta automáticamente como Station a la nueva red.
+- **Aprovisionamiento oficial por BLE (`wifi_provisioning` + NimBLE)**:
+  - En lugar de SoftAP (que presentaba baja visibilidad en antenas de bajo perfil), se utiliza transporte **Bluetooth Low Energy (BLE)** compatible con la aplicación oficial **ESP BLE Provisioning** (Android / iOS).
+  - Nombre del dispositivo BLE anunciado: `PROV_Aire_XXXX` (basado en la dirección MAC del chip).
+  - Protocolo de seguridad: `Security 1` con código PoP (*Proof of Possession*) `12345678`.
+  - El usuario escanea y selecciona su red Wi-Fi desde la interfaz del celular sin desconectarse de sus datos móviles.
+  - Al completar la conexión y recibir IP, el stack BLE se **apaga y libera por completo la memoria RAM** asignada al controlador de radio Bluetooth (`WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM`).
+- **Activación / Reseteo de Credenciales**:
+  - Si el usuario **mantiene presionado el botón BOOT (GPIO 9)** durante >3 segundos o presiona `[b]` en la consola USB, el ESP reinicia el estado de aprovisionamiento en NVS y levanta el anuncio BLE.
 - **Sincronización Horaria SNTP**:
   - Una vez en línea, sincroniza reloj con `esp_netif_sntp` ajustando zona horaria local (`TZ=ART3`).
 
@@ -149,17 +151,15 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 -   - Corrección crítica de comportamiento: el bit de Power Toggle solo se conmuta al ejecutar encendido/apagado, permitiendo cambios de temperatura y modo sin apagar el equipo.
 - - **Validación en Hardware Real**: Control paramétrico verificado exitosamente sobre el split Marshall (cambio de temperatura, modo, velocidad de fan y oscilación de swing respondiendo sin apagar la unidad).
  
-### 7.3 Hito en Progreso: Fase 3 (Gestión Wi-Fi Dinámica con NVS y SoftAP)
+### 7.3 Hito Alcanzado: Fase 3 (Migración e Implementación de Aprovisionamiento BLE con NimBLE)
 
-- **Módulo `wifi_manager` implementado**:
-  - Persistencia de credenciales en almacenamiento no volátil (`nvs_flash`).
-  - Lógica de fallback: si no hay credenciales en NVS, activa automáticamente el modo SoftAP `Aire-Marshall-Setup` (WPA2-PSK `12345678`).
-  - Detección de pulsación prolongada en el botón físico BOOT (GPIO 9 > 3 segundos) para forzar el SoftAP en caliente en cualquier momento.
-  - Servidor web ligero embebido (`esp_http_server`) en el puerto 80 con página HTML de bienvenida (`/`) y endpoint de guardado (`/save`) con reinicio diferido.
-- **Observaciones y Diagnóstico de Hardware RF**:
-  - El stack TCP/IP y Wi-Fi de ESP-IDF v5.5 levanta correctamente el servicio SoftAP (servidor DHCP activo en `192.168.4.1`, evento `WIFI_EVENT_AP_START` verificado).
-  - En los módulos genéricos **ESP32-C3 SuperMini**, la antena integrada de cerámica presenta limitaciones físicas de ganancia en modo emisor de balizas SoftAP autónomo si no se utiliza antena externa.
-  - Como paso complementario, se evaluará la conexión en modo cliente (Station) directo hacia la red Wi-Fi hogareña para habilitar la Fase 4 (MQTT y API REST).
+- **Transición de SoftAP a BLE**:
+  - Se sustituyó el esquema de punto de acceso Wi-Fi autónomo por el componente oficial `wifi_provisioning` con transporte BLE (stack ligero **NimBLE**).
+  - Se creó tabla de particiones personalizada (`partitions.csv`) reservando 1.9 MB para la app de fábrica y se habilitó flash de 4 MB.
+  - Anuncio BLE verificado en el aire por escaneo RF con el identificador: **`PROV_Aire_F2CC`** (MAC `0C:4E:A0:66:F2:CE`).
+  - Configurado esquema de autenticación `Security 1` con código de posesión (PoP): `12345678`.
+  - Liberación de memoria comprobada: tras la conexión exitosa a Wi-Fi, la llamada a `wifi_prov_mgr_deinit()` apaga la radio BLE y libera toda la RAM interna (`WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM`).
+  - Reseteo en caliente: pulsación del botón BOOT (>3 seg) o tecla `[b]` / `[w]` en consola borra credenciales en NVS y reactiva el anuncio BLE.
 
 ---
 

@@ -1,0 +1,5 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# Particiones optimizadas para ESP32-C3 SuperMini (Flash 4MB / BLE Provisioning)
+nvs,      data, nvs,     0x9000,  0x6000,
+phy_init, data, phy,     0xf000,  0x1000,
+factory,  app,  factory, 0x20000, 0x1E0000,
