@@ -151,21 +151,29 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 -   - Corrección crítica de comportamiento: el bit de Power Toggle solo se conmuta al ejecutar encendido/apagado, permitiendo cambios de temperatura y modo sin apagar el equipo.
 - - **Validación en Hardware Real**: Control paramétrico verificado exitosamente sobre el split Marshall (cambio de temperatura, modo, velocidad de fan y oscilación de swing respondiendo sin apagar la unidad).
  
-### 7.3 Hito Alcanzado: Fase 3 (Migración e Implementación de Aprovisionamiento BLE con NimBLE)
+### 7.3 Hito Alcanzado: Fase 3 (Aprovisionamiento BLE y Conexión Wi-Fi) Superada con Éxito
 
-- **Transición de SoftAP a BLE**:
-  - Se sustituyó el esquema de punto de acceso Wi-Fi autónomo por el componente oficial `wifi_provisioning` con transporte BLE (stack ligero **NimBLE**).
-  - Se creó tabla de particiones personalizada (`partitions.csv`) reservando 1.9 MB para la app de fábrica y se habilitó flash de 4 MB.
-  - Anuncio BLE verificado en el aire por escaneo RF con el identificador: **`PROV_Aire_F2CC`** (MAC `0C:4E:A0:66:F2:CE`).
-  - Configurado esquema de autenticación `Security 1` con código de posesión (PoP): `12345678`.
-  - Liberación de memoria comprobada: tras la conexión exitosa a Wi-Fi, la llamada a `wifi_prov_mgr_deinit()` apaga la radio BLE y libera toda la RAM interna (`WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM`).
-  - Reseteo en caliente: pulsación del botón BOOT (>3 seg) o tecla `[b]` / `[w]` en consola borra credenciales en NVS y reactiva el anuncio BLE.
+- **Transición y Arquitectura**:
+  - Se implementó exitosamente el componente `wifi_provisioning` con transporte BLE bajo el stack ligero **NimBLE** (`PROV_Aire_F2CC`, PoP `12345678`).
+  - Tabla de particiones personalizada (`partitions.csv`) con 1.9 MB asignados a la app de fábrica en flash de 4 MB.
+- **Validación en Hardware Real (Celular -> ESP32-C3)**:
+  - Dispositivo detectado y emparejado mediante la app oficial **ESP BLE Provisioning** en smartphone.
+  - Recepción de credenciales y conexión inmediata al router doméstico (**SSID: `Personal-CE7-2.4GHz`**).
+  - Señal óptima confirmada: **RSSI -33 dBm** en canal 11 con cifrado WPA2-PSK.
+  - Retención de IP dinámica asignada (`wifi_manager_get_ip_str()`) y visualización en menú interactivo.
+  - **Eficiencia de Memoria**: Al conectarse, `wifi_prov_mgr_deinit()` desactivó el controlador Bluetooth liberando toda la memoria RAM (`WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM`).
+  - Persistencia total: credenciales guardadas en NVS, reconexión automática en reinicios o cortes de energía sin intervención manual.
 
 ---
 
-### 7.4 Siguiente Paso (Fase 4 / Fase 5)
+### 7.4 Siguiente Paso (Fase 4: API REST, Sincronización SNTP y MQTT / Home Assistant)
 
-1. Conectar a la red Wi-Fi local y enlazar con el broker **MQTT** (Mosquitto en Raspberry Pi 4) para exponer el equipo a **Home Assistant** (`climate.mqtt`).
-2. Implementar los endpoints REST (`/api/status`, `/api/set`) para control por red local.
-3. Sincronización horaria con **SNTP** (`esp_netif_sntp`).
-4. Implementar feedback visual suave con LED PWM (`ledc`) en GPIO 2 (Fase 5).
+1. **Sincronización Horaria (SNTP)**: Sincronizar reloj de pared con `esp_netif_sntp` ajustando zona horaria local (`ART3` / UTC-3).
+2. **Servidor HTTP y API REST Local (`esp_http_server`)**:
+   - `GET /api/status`: Estado actual del split y red en formato JSON.
+   - `POST /api/set`: Recepción de comandos remotos en JSON (temp, modo, fan, swing, power).
+3. **Cliente MQTT (`esp-mqtt`)**:
+   - Conexión al broker Mosquitto en la Raspberry Pi 4 B.
+   - Publicación de estado y suscripción a órdenes (`aire/living/set`).
+   - Auto-Discovery MQTT para integración nativa como entidad `climate` en Home Assistant.
+4. **Fase 5 (Refinamiento)**: Efectos visuales de LED PWM difuminado (`ledc` en GPIO 2).

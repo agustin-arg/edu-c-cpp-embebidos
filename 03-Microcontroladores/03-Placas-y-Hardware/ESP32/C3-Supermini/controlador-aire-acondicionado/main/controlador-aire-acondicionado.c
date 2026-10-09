@@ -290,6 +290,9 @@ static void print_help_menu(void)
     printf("  [h]       : Ver este menú y estado actual\n");
     printf("-------------------------------------------------------------------\n");
     dg11j1_print_state(&s_current_state);
+    printf("  Wi-Fi: %s (IP: %s)\n",
+           wifi_manager_is_connected() ? "CONECTADO" : "DESCONECTADO / APROVISIONANDO",
+           wifi_manager_get_ip_str());
     printf("-------------------------------------------------------------------\n");
     printf("  [SNIFFER ACTIVO]: Si presionas cualquier botón en tu control físico\n");
     printf("  DG11J1-01 apuntando al TSOP (GPIO %d), se actualizará en tiempo real.\n", IR_RX_GPIO);

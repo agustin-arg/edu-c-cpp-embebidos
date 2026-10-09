@@ -38,6 +38,11 @@ wifi_mgr_state_t wifi_manager_get_state(void);
  */
 bool wifi_manager_is_connected(void);
 
+/**
+ * @brief Obtiene la dirección IP actual en formato string ("192.168.x.x").
+ */
+const char *wifi_manager_get_ip_str(void);
+
 #ifdef __cplusplus
 }
 #endif

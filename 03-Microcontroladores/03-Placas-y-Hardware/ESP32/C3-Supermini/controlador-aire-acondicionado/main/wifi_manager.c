@@ -24,6 +24,7 @@ static const char *TAG = "WIFI_MGR";
 static EventGroupHandle_t s_wifi_event_group = NULL;
 static wifi_mgr_state_t   s_current_state = WIFI_MGR_STA_DISCONNECTED;
 static char               s_service_name[32] = {0};
+static char               s_ip_str[16] = "0.0.0.0";
 
 // UUID de 128-bit estándar de Espressif para compatibilidad nativa con la app 'ESP BLE Provisioning'
 static const uint8_t s_custom_service_uuid[] = {
@@ -88,7 +89,8 @@ static void wifi_prov_event_handler(void *arg, esp_event_base_t event_base,
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        ESP_LOGI(TAG, ">>> ¡CONECTADO A WI-FI! IP Asignada: " IPSTR " <<<", IP2STR(&event->ip_info.ip));
+        snprintf(s_ip_str, sizeof(s_ip_str), IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, ">>> ¡CONECTADO A WI-FI! IP Asignada: %s <<<", s_ip_str);
         s_current_state = WIFI_MGR_STA_CONNECTED;
         if (s_wifi_event_group) {
             xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
@@ -159,7 +161,7 @@ esp_err_t wifi_manager_init(void)
         ESP_LOGW(TAG, "Dispositivo no aprovisionado. Levantando servicio BLE Provisioning...");
 
         get_device_service_name(s_service_name, sizeof(s_service_name));
-        wifi_prov_scheme_ble_set_service_uuid(s_custom_service_uuid);
+        wifi_prov_scheme_ble_set_service_uuid((uint8_t *)s_custom_service_uuid);
 
         wifi_prov_security_t security = WIFI_PROV_SECURITY_1;
         const char *pop = PROV_POP_CODE;
@@ -189,4 +191,9 @@ wifi_mgr_state_t wifi_manager_get_state(void)
 bool wifi_manager_is_connected(void)
 {
     return (s_current_state == WIFI_MGR_STA_CONNECTED);
+}
+
+const char *wifi_manager_get_ip_str(void)
+{
+    return s_ip_str;
 }
