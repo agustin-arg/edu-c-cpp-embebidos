@@ -30,7 +30,8 @@ static const char *TAG = "AC_CONTROLLER";
 
 // Comandos de teclado / interacción
 typedef enum {
-    CMD_SEND_CURRENT = 0,
+    CMD_NONE = 0,
+    CMD_SEND_CURRENT,
     CMD_TEMP_UP,
     CMD_TEMP_DOWN,
     CMD_MODE_NEXT,
@@ -90,6 +91,13 @@ static void button_task(void *pvParameters)
     };
     gpio_config(&io_conf);
 
+    // Esperar a que el pin BOOT (GPIO 9) se estabilice en ALTO tras arranque/reset
+    // (GPIO 9 es strapping pin en ESP32-C3 y puede estar retenido en bajo por reset/DTR)
+    while (gpio_get_level(BOOT_BUTTON_GPIO) == 0) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    vTaskDelay(pdMS_TO_TICKS(150));
+
     while (1) {
         if (gpio_get_level(BOOT_BUTTON_GPIO) == 0) {
             // Flanco de bajada detectado, debounce de 40ms
@@ -113,8 +121,8 @@ static void button_task(void *pvParameters)
                     }
                 }
 
-                // Si se soltó antes de los 3 segundos y duró más de 50ms, es pulsación corta
-                if (press_ms > 50 && press_ms < 3000) {
+                // Si se soltó antes de los 3 segundos y duró al menos 120ms, es pulsación corta legítima
+                if (press_ms >= 120 && press_ms < 3000) {
                     ui_action_t act = CMD_SEND_CURRENT;
                     xQueueSend(s_action_queue, &act, 0);
                 }
@@ -130,7 +138,7 @@ static void console_input_task(void *pvParameters)
     while (1) {
         int c = getchar();
         if (c != EOF && c > 0) {
-            ui_action_t act = CMD_PRINT_STATUS;
+            ui_action_t act = CMD_NONE;
             bool valid = true;
 
             switch (c) {
@@ -166,9 +174,6 @@ static void console_input_task(void *pvParameters)
                     break;
                 case 't':
                 case 'T':
-                case ' ':
-                case '\n':
-                case '\r':
                     act = CMD_SEND_CURRENT;
                     break;
                 case '?':
@@ -181,7 +186,7 @@ static void console_input_task(void *pvParameters)
                     break;
             }
 
-            if (valid) {
+            if (valid && act != CMD_NONE) {
                 xQueueSend(s_action_queue, &act, 0);
             }
         }
@@ -220,6 +225,11 @@ static void init_ir_subsystem(void)
         .mem_block_symbols = 48,
         .trans_queue_depth = 4,
         .gpio_num = IR_TX_GPIO,
+        .flags = {
+            .invert_out = 0,
+            .with_dma = 0,
+            .init_level = 0,
+        },
     };
     ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_channel_cfg, &s_tx_channel));
 
@@ -259,6 +269,9 @@ static void transmit_current_state(void)
 
     rmt_transmit_config_t tx_cfg = {
         .loop_count = 0,
+        .flags = {
+            .eot_level = 0,
+        },
     };
     ESP_ERROR_CHECK(rmt_transmit(s_tx_channel, s_copy_encoder, s_tx_buffer,
                                  num_symbols * sizeof(rmt_symbol_word_t),
@@ -286,7 +299,7 @@ static void print_help_menu(void)
     printf("  [p]       : Encender / Apagar (Power Toggle)\n");
     printf("  [s]       : Alternar Swing (Oscilación)\n");
     printf("  [b] / [w] : Reconfigurar Wi-Fi (Modo Aprovisionamiento BLE)\n");
-    printf("  [t] / [ENTER] / Botón BOOT (corto): ENVIAR comando IR al aire\n");
+    printf("  [t] / Botón BOOT (corto)          : ENVIAR comando IR al aire\n");
     printf("  Botón BOOT (mantener >3 seg)      : Reconfigurar Wi-Fi por BLE\n");
     printf("  [h]       : Ver este menú y estado actual\n");
     printf("-------------------------------------------------------------------\n");
@@ -418,11 +431,15 @@ void app_main(void)
                 case CMD_PRINT_STATUS:
                     print_help_menu();
                     break;
+
+                case CMD_NONE:
+                default:
+                    break;
             }
 
             if (changed) {
                 dg11j1_print_state(&s_current_state);
-                printf(">> Presiona [t], [ENTER] o el botón BOOT para emitir este estado al aire.\n");
+                printf(">> Presiona [t] o el botón BOOT para emitir este estado al aire.\n");
             }
         }
     }
