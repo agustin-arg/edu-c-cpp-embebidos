@@ -16,6 +16,7 @@
 #include <wifi_provisioning/manager.h>
 #include <wifi_provisioning/scheme_ble.h>
 #include "time_manager.h"
+#include "mqtt_manager.h"
 
 static const char *TAG = "WIFI_MGR";
 
@@ -88,6 +89,7 @@ static void wifi_prov_event_handler(void *arg, esp_event_base_t event_base,
                 break;
             case WIFI_EVENT_STA_DISCONNECTED:
                 s_current_state = WIFI_MGR_STA_DISCONNECTED;
+                mqtt_manager_stop();
                 if (s_is_provisioned) {
                     ESP_LOGW(TAG, "Wi-Fi desconectado. Intentando reconectar...");
                     esp_wifi_connect();
@@ -102,6 +104,7 @@ static void wifi_prov_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, ">>> ¡CONECTADO A WI-FI! IP Asignada: %s <<<", s_ip_str);
         s_current_state = WIFI_MGR_STA_CONNECTED;
         time_manager_init();
+        mqtt_manager_start();
         if (s_wifi_event_group) {
             xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         }

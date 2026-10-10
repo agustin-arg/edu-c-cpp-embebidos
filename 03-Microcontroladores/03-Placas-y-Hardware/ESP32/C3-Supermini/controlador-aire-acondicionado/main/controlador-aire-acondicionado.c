@@ -14,6 +14,7 @@
 #include "dg11j1_protocol.h"
 #include "wifi_manager.h"
 #include "time_manager.h"
+#include "mqtt_manager.h"
 
 static const char *TAG = "AC_CONTROLLER";
 
@@ -28,7 +29,7 @@ static const char *TAG = "AC_CONTROLLER";
 #define IR_CARRIER_FREQ_HZ  38000           // Portadora infrarroja estándar de 38 kHz
 #define MAX_IR_SYMBOLS      600             // Capacidad para ráfagas HVAC completas
 
-// Comandos de teclado / interacción
+// Comandos de teclado / interacción / MQTT
 typedef enum {
     CMD_NONE = 0,
     CMD_SEND_CURRENT,
@@ -39,7 +40,14 @@ typedef enum {
     CMD_POWER_TOGGLE,
     CMD_SWING_TOGGLE,
     CMD_PRINT_STATUS,
-    CMD_START_BLE_PROV
+    CMD_START_BLE_PROV,
+    CMD_SET_EXPLICIT_STATE
+} ui_action_type_t;
+
+typedef struct {
+    ui_action_type_t type;
+    ac_state_t       state;
+    ac_cmd_t         cmd;
 } ui_action_t;
 
 // ==============================================================================
@@ -110,7 +118,7 @@ static void button_task(void *pvParameters)
                     if (press_ms >= 3000) {
                         // Pulsación larga superó los 3 segundos
                         printf("\n[BOTON BOOT] Pulsación larga detectada (>3s) -> Reiniciando Aprovisionamiento BLE...\n");
-                        ui_action_t act = CMD_START_BLE_PROV;
+                        ui_action_t act = { .type = CMD_START_BLE_PROV };
                         xQueueSend(s_action_queue, &act, 0);
 
                         // Esperar a que el usuario suelte el botón para no redisparar
@@ -123,7 +131,7 @@ static void button_task(void *pvParameters)
 
                 // Si se soltó antes de los 3 segundos y duró al menos 120ms, es pulsación corta legítima
                 if (press_ms >= 120 && press_ms < 3000) {
-                    ui_action_t act = CMD_SEND_CURRENT;
+                    ui_action_t act = { .type = CMD_SEND_CURRENT };
                     xQueueSend(s_action_queue, &act, 0);
                 }
             }
@@ -138,55 +146,55 @@ static void console_input_task(void *pvParameters)
     while (1) {
         int c = getchar();
         if (c != EOF && c > 0) {
-            ui_action_t act = CMD_NONE;
+            ui_action_t act = { .type = CMD_NONE };
             bool valid = true;
 
             switch (c) {
                 case '+':
                 case '=':
-                    act = CMD_TEMP_UP;
+                    act.type = CMD_TEMP_UP;
                     break;
                 case '-':
                 case '_':
-                    act = CMD_TEMP_DOWN;
+                    act.type = CMD_TEMP_DOWN;
                     break;
                 case 'm':
                 case 'M':
-                    act = CMD_MODE_NEXT;
+                    act.type = CMD_MODE_NEXT;
                     break;
                 case 'f':
                 case 'F':
-                    act = CMD_FAN_NEXT;
+                    act.type = CMD_FAN_NEXT;
                     break;
                 case 'p':
                 case 'P':
-                    act = CMD_POWER_TOGGLE;
+                    act.type = CMD_POWER_TOGGLE;
                     break;
                 case 's':
                 case 'S':
-                    act = CMD_SWING_TOGGLE;
+                    act.type = CMD_SWING_TOGGLE;
                     break;
                 case 'b':
                 case 'B':
                 case 'w':
                 case 'W':
-                    act = CMD_START_BLE_PROV;
+                    act.type = CMD_START_BLE_PROV;
                     break;
                 case 't':
                 case 'T':
-                    act = CMD_SEND_CURRENT;
+                    act.type = CMD_SEND_CURRENT;
                     break;
                 case '?':
                 case 'h':
                 case 'H':
-                    act = CMD_PRINT_STATUS;
+                    act.type = CMD_PRINT_STATUS;
                     break;
                 default:
                     valid = false;
                     break;
             }
 
-            if (valid && act != CMD_NONE) {
+            if (valid && act.type != CMD_NONE) {
                 xQueueSend(s_action_queue, &act, 0);
             }
         }
@@ -287,10 +295,27 @@ static void transmit_current_state(void)
     printf(">>> [TX OK] Trama infrarroja enviada con éxito.\n\n");
 }
 
+static void on_mqtt_command(const ac_state_t *target_state, ac_cmd_t cmd)
+{
+    ui_action_t act = {
+        .type = CMD_SET_EXPLICIT_STATE,
+        .state = *target_state,
+        .cmd = cmd,
+    };
+    xQueueSend(s_action_queue, &act, 0);
+}
+
+static void on_mqtt_get_state(ac_state_t *out_state)
+{
+    if (out_state) {
+        *out_state = s_current_state;
+    }
+}
+
 static void print_help_menu(void)
 {
     printf("\n===================================================================\n");
-    printf("  CONTROLADOR INTELIGENTE AIRE ACONDICIONADO MARSHALL (Fase 4 - SNTP)\n");
+    printf("  CONTROLADOR INTELIGENTE AIRE ACONDICIONADO MARSHALL (Fase 4 - MQTT)\n");
     printf("===================================================================\n");
     printf("  [+] o [=] : Subir temperatura (+1 C)\n");
     printf("  [-] o [_] : Bajar temperatura (-1 C)\n");
@@ -307,6 +332,9 @@ static void print_help_menu(void)
     printf("  Wi-Fi: %s (IP: %s)\n",
            wifi_manager_is_connected() ? "CONECTADO" : "DESCONECTADO / APROVISIONANDO",
            wifi_manager_get_ip_str());
+    printf("  MQTT : %s (Broker: %s)\n",
+           mqtt_manager_is_connected() ? "CONECTADO" : "DESCONECTADO / ESPERANDO RED",
+           MQTT_BROKER_URI);
     char time_str[32];
     time_manager_get_time_str(time_str, sizeof(time_str));
     printf("  Hora : %s (%s)\n", time_str,
@@ -330,7 +358,10 @@ void app_main(void)
 
     init_ir_subsystem();
 
-    // Inicializar subsistema Wi-Fi (conecta a NVS o arranca SoftAP de configuración)
+    // Inicializar subsistema MQTT con callbacks de comando y estado
+    mqtt_manager_init(on_mqtt_command, on_mqtt_get_state);
+
+    // Inicializar subsistema Wi-Fi (conecta a NVS o arranca BLE de aprovisionamiento)
     wifi_manager_init();
 
     xTaskCreate(button_task, "button_task", 2048, NULL, 5, NULL);
@@ -357,20 +388,32 @@ void app_main(void)
                     printf("  Comando: %s\n", dg11j1_cmd_to_string(decoded_cmd));
                     dg11j1_print_state(&s_current_state);
                     printf("===================================================================\n\n");
+
+                    // Sincronizar en tiempo real con Mosquitto y Home Assistant
+                    mqtt_manager_publish_state(&s_current_state);
                 }
             }
             // Rearmar recepción
             ESP_ERROR_CHECK(rmt_receive(s_rx_channel, s_rx_buffer, sizeof(s_rx_buffer), &s_rx_config));
         }
 
-        // 2. Procesamiento de acciones de usuario (Teclado o Botón BOOT)
+        // 2. Procesamiento de acciones de usuario (Teclado, Botón BOOT o MQTT)
         ui_action_t action;
         if (xQueueReceive(s_action_queue, &action, 0) == pdPASS) {
             bool changed = false;
 
-            switch (action) {
+            switch (action.type) {
+                case CMD_SET_EXPLICIT_STATE:
+                    s_current_state = action.state;
+                    s_last_cmd = action.cmd;
+                    printf("\n>>> [ORDEN REMOTA MQTT] Aplicando nuevo estado al split Marshall...\n");
+                    transmit_current_state();
+                    mqtt_manager_publish_state(&s_current_state);
+                    break;
+
                 case CMD_SEND_CURRENT:
                     transmit_current_state();
+                    mqtt_manager_publish_state(&s_current_state);
                     break;
 
                 case CMD_START_BLE_PROV:
@@ -440,6 +483,7 @@ void app_main(void)
             if (changed) {
                 dg11j1_print_state(&s_current_state);
                 printf(">> Presiona [t] o el botón BOOT para emitir este estado al aire.\n");
+                mqtt_manager_publish_state(&s_current_state);
             }
         }
     }
