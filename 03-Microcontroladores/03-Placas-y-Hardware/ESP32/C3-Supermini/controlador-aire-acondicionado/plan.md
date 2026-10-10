@@ -241,13 +241,21 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 - **Protección de Parámetros en el Arranque del ESP32**:
   - Se eliminó la emisión ciega de estado por defecto (`24°C / Cool`) al conectar al broker MQTT.
   - Al reiniciar el ESP32, ya no se sobreescriben ni reinician los ajustes previos retenidos en Mosquitto y configurados desde Home Assistant.
+- **Validación de Usuario**:
+  - Se confirmó el correcto funcionamiento de toda la pila: conexión MQTT, tarjeta nativa de clima en Home Assistant, switch independiente de encendido/apagado y respuesta a comandos remotos.
 
 ---
 
-### 7.8 Siguientes Pasos
+### 7.8 Siguientes Pasos (Próximas Sesiones)
 
-1. **Paso 1: Verificación de Tarjeta y Switch en Home Assistant**:
-   - Comprobar que en el panel de Home Assistant ahora aparecen tanto la tarjeta de clima (`climate.aire_marshall_living`) como el interruptor de encendido (`switch.controlador_split_marshall_encendido`).
+1. **Paso 1: Sincronización Fina del Sensor Infrarrojo (Sniffer TSOP1738 en GPIO 6)**:
+   - Realizar pruebas de campo exhaustivas con el control remoto físico **DG11J1-01** apuntando directamente al demodulador TSOP1738.
+   - Asegurar que ante cualquier comando físico pulsado en el control remoto (cambio de grados, encendido/apagado, velocidad o modo):
+     - El decodificador identifique y valide la trama de 21 bytes sin falsos positivos.
+     - Se actualice la variable global de estado `s_current_state`.
+     - Se dispare el feedback visual de doble pulso suave en el LED.
+     - Se publique de inmediato la telemetría actualizada por MQTT a `aire/living/status` para reflejar el cambio en tiempo real en la tarjeta de Home Assistant.
+
 2. **Paso 2: Orquestación Conversacional con OpenClaw (Docker en Raspberry Pi 4 B)**:
-   - Configurar o verificar la integración/skill de OpenClaw (vía API de Home Assistant o cliente MQTT local) para interactuar en lenguaje natural con el aire acondicionado (ej. "Antigravity/OpenClaw, enciende el aire y ponlo a 23 grados").
+   - Integrar o crear la skill en OpenClaw para interactuar con la entidad de Home Assistant o directamente vía MQTT mediante lenguaje natural (ej. *"OpenClaw, enciende el aire a 24 en frío"*).
 
