@@ -225,18 +225,29 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 
 ---
 
-### 7.7 Siguientes Pasos
+### 7.7 Hito Alcanzado: Fase 5 (Feedback Visual LED PWM con Fade y Switch Independiente en HA) Superada con Éxito
 
-1. **Paso 1: Confirmación en Home Assistant**:
-   - Verificar la tarjeta de clima generada automáticamente en el panel de Home Assistant bajo la entidad `climate.aire_marshall_f2cc`.
-   - Probar el ajuste visual de temperatura y modos desde la aplicación web o móvil de Home Assistant.
+- **Driver LEDC de Desvanecimiento por Hardware (`led_indicator.h` / `.c`)**:
+  - Control por modulación PWM a 5 kHz con resolución de 10 bits sobre el LED onboard azul del ESP32-C3 SuperMini (GPIO 8, lógica activa en nivel bajo con `flags.output_invert = 1`).
+  - Animaciones no bloqueantes gestionadas por una tarea dedicada FreeRTOS (`led_indicator_task`):
+    - **Transmisión IR (TX)**: Ráfaga rápida de 3 destellos difuminados (~35 ms subida/bajada).
+    - **Recepción IR (RX Sniffer)**: Doble pulso suave difuminado (~100 ms subida/bajada).
+    - **Aprovisionamiento BLE**: Efecto "respiración" continua (fade suave 0 a 100% y descenso en 700 ms).
+    - **Confirmación Wi-Fi**: Pulso suave único (250 ms) al asociarse y obtener IP.
+    - **Reposo Nocturno**: LED 100% apagado en estado normal para evitar molestias lumínicas.
+- **Entidad Independiente de Encendido (`switch.aire_marshall_F2CC_power`) en Home Assistant**:
+  - Se añadió la publicación de MQTT Discovery en `homeassistant/switch/aire_marshall_F2CC_power/config` (`retain=true`) vinculada al mismo dispositivo ("Controlador Split Marshall").
+  - Permite encender y apagar el split directamente con un toggle switch sin tocar el selector de modos de la tarjeta de clima.
+- **Protección de Parámetros en el Arranque del ESP32**:
+  - Se eliminó la emisión ciega de estado por defecto (`24°C / Cool`) al conectar al broker MQTT.
+  - Al reiniciar el ESP32, ya no se sobreescriben ni reinician los ajustes previos retenidos en Mosquitto y configurados desde Home Assistant.
 
-2. **Paso 2: Orquestación Conversacional con OpenClaw (Docker)**:
-   - Configurar o verificar la herramienta de integración de OpenClaw (vía API de Home Assistant o cliente MQTT local) para interactuar en lenguaje natural con el aire acondicionado (ej. "Antigravity/OpenClaw, pon el aire en 24 en frío").
+---
 
-3. **Paso 3: Fase 5 (Refinamiento y Feedback Visual por LED PWM)**:
-   - Implementar el driver LEDC en GPIO 2 con efectos de desvanecimiento (*fade*):
-     - Ráfagas suaves para transmisión IR (TX).
-     - Doble pulso para recepción de control remoto (RX sniffer).
-     - Efecto respiración durante aprovisionamiento BLE.
-     - LED apagado en reposo.
+### 7.8 Siguientes Pasos
+
+1. **Paso 1: Verificación de Tarjeta y Switch en Home Assistant**:
+   - Comprobar que en el panel de Home Assistant ahora aparecen tanto la tarjeta de clima (`climate.aire_marshall_living`) como el interruptor de encendido (`switch.controlador_split_marshall_encendido`).
+2. **Paso 2: Orquestación Conversacional con OpenClaw (Docker en Raspberry Pi 4 B)**:
+   - Configurar o verificar la integración/skill de OpenClaw (vía API de Home Assistant o cliente MQTT local) para interactuar en lenguaje natural con el aire acondicionado (ej. "Antigravity/OpenClaw, enciende el aire y ponlo a 23 grados").
+

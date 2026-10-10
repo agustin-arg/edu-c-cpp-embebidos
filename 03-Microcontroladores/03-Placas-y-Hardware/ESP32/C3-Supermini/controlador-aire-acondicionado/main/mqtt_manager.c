@@ -23,6 +23,7 @@ static mqtt_state_getter_t    s_state_getter = NULL;
 static char s_client_id[32] = {0};
 static char s_node_id[32] = {0};
 static char s_discovery_topic[96] = {0};
+static char s_switch_discovery_topic[96] = {0};
 
 // ==============================================================================
 // 1. HELPERS DE CONVERSIÓN DE ESTADO A STRINGS HOME ASSISTANT
@@ -272,15 +273,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             esp_mqtt_client_subscribe(s_client, MQTT_TOPIC_SET_SUB, 1);
             ESP_LOGI(TAG, "Suscrito a tópico de órdenes: '%s'", MQTT_TOPIC_SET_SUB);
 
-            // 3. Publicar payload de Home Assistant MQTT Discovery
+            // 3. Publicar payload de Home Assistant MQTT Discovery (Climate y Switch)
             mqtt_manager_publish_discovery();
 
-            // 4. Publicar estado actual retenido
-            if (s_state_getter) {
-                ac_state_t cur;
-                s_state_getter(&cur);
-                mqtt_manager_publish_state(&cur);
-            }
+            // NOTA: Se evita emitir el estado por defecto al conectar para no reiniciar
+            // los valores configurados en Home Assistant ni sobreescribir el estado previo.
             break;
 
         case MQTT_EVENT_DISCONNECTED:
@@ -335,6 +332,7 @@ esp_err_t mqtt_manager_init(mqtt_command_handler_t cmd_handler, mqtt_state_gette
     snprintf(s_client_id, sizeof(s_client_id), "marshall_ac_%02X%02X", mac[4], mac[5]);
     snprintf(s_node_id, sizeof(s_node_id), "aire_marshall_%02X%02X", mac[4], mac[5]);
     snprintf(s_discovery_topic, sizeof(s_discovery_topic), "homeassistant/climate/%s/config", s_node_id);
+    snprintf(s_switch_discovery_topic, sizeof(s_switch_discovery_topic), "homeassistant/switch/%s_power/config", s_node_id);
 
     ESP_LOGI(TAG, "Configurando MQTT Client ID: %s | Node ID: %s", s_client_id, s_node_id);
 
@@ -516,9 +514,52 @@ esp_err_t mqtt_manager_publish_discovery(void)
     }
 
     int msg_id = esp_mqtt_client_publish(s_client, s_discovery_topic, json_str, 0, 1, 1);
-    ESP_LOGI(TAG, ">>> [MQTT DISCOVERY] Payload publicado en '%s' (msg_id=%d, len=%d bytes, retain=true) <<<",
+    ESP_LOGI(TAG, ">>> [MQTT DISCOVERY] Clima publicado en '%s' (msg_id=%d, len=%d bytes, retain=true) <<<",
              s_discovery_topic, msg_id, (int)strlen(json_str));
     free(json_str);
+
+    // 2. Publicar MQTT Discovery para Switch independiente de Encendido/Apagado
+    cJSON *sw_root = cJSON_CreateObject();
+    if (sw_root) {
+        cJSON_AddStringToObject(sw_root, "name", "Encendido");
+        char sw_uid[64];
+        snprintf(sw_uid, sizeof(sw_uid), "%s_power", s_node_id);
+        cJSON_AddStringToObject(sw_root, "unique_id", sw_uid);
+
+        // Mismo dispositivo para agruparlo en Home Assistant
+        cJSON *sw_dev = cJSON_CreateObject();
+        cJSON *sw_ids = cJSON_CreateArray();
+        cJSON_AddItemToArray(sw_ids, cJSON_CreateString(s_node_id));
+        cJSON_AddItemToObject(sw_dev, "identifiers", sw_ids);
+        cJSON_AddStringToObject(sw_dev, "name", "Controlador Split Marshall");
+        cJSON_AddStringToObject(sw_dev, "model", "ESP32-C3 SuperMini (DG11J1-01)");
+        cJSON_AddStringToObject(sw_dev, "manufacturer", "Marshall / ESP-IDF");
+        cJSON_AddStringToObject(sw_dev, "sw_version", "1.0.0");
+        cJSON_AddItemToObject(sw_root, "device", sw_dev);
+
+        cJSON_AddStringToObject(sw_root, "availability_topic", MQTT_TOPIC_AVAIL);
+        cJSON_AddStringToObject(sw_root, "payload_available", "online");
+        cJSON_AddStringToObject(sw_root, "payload_not_available", "offline");
+
+        cJSON_AddStringToObject(sw_root, "command_topic", MQTT_TOPIC_BASE "/set/power");
+        cJSON_AddStringToObject(sw_root, "state_topic", MQTT_TOPIC_STATUS);
+        cJSON_AddStringToObject(sw_root, "value_template", "{{ value_json.power }}");
+        cJSON_AddStringToObject(sw_root, "state_on", "ON");
+        cJSON_AddStringToObject(sw_root, "state_off", "OFF");
+        cJSON_AddStringToObject(sw_root, "payload_on", "ON");
+        cJSON_AddStringToObject(sw_root, "payload_off", "OFF");
+        cJSON_AddStringToObject(sw_root, "icon", "mdi:power");
+
+        char *sw_json_str = cJSON_PrintUnformatted(sw_root);
+        cJSON_Delete(sw_root);
+
+        if (sw_json_str) {
+            int sw_msg_id = esp_mqtt_client_publish(s_client, s_switch_discovery_topic, sw_json_str, 0, 1, 1);
+            ESP_LOGI(TAG, ">>> [MQTT DISCOVERY] Switch publicado en '%s' (msg_id=%d, len=%d bytes, retain=true) <<<",
+                     s_switch_discovery_topic, sw_msg_id, (int)strlen(sw_json_str));
+            free(sw_json_str);
+        }
+    }
 
     return ESP_OK;
 }

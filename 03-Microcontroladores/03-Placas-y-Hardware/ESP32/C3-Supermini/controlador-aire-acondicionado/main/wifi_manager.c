@@ -17,6 +17,7 @@
 #include <wifi_provisioning/scheme_ble.h>
 #include "time_manager.h"
 #include "mqtt_manager.h"
+#include "led_indicator.h"
 
 static const char *TAG = "WIFI_MGR";
 
@@ -72,6 +73,7 @@ static void wifi_prov_event_handler(void *arg, esp_event_base_t event_base,
                 break;
             case WIFI_PROV_END:
                 ESP_LOGI(TAG, "Aprovisionamiento finalizado. Liberando memoria BLE.");
+                led_indicator_set_mode(LED_MODE_OFF);
                 wifi_prov_mgr_deinit();
                 break;
             default:
@@ -103,6 +105,8 @@ static void wifi_prov_event_handler(void *arg, esp_event_base_t event_base,
         snprintf(s_ip_str, sizeof(s_ip_str), IPSTR, IP2STR(&event->ip_info.ip));
         ESP_LOGI(TAG, ">>> ¡CONECTADO A WI-FI! IP Asignada: %s <<<", s_ip_str);
         s_current_state = WIFI_MGR_STA_CONNECTED;
+        led_indicator_set_mode(LED_MODE_OFF);
+        led_indicator_trigger(LED_EVENT_WIFI_CONNECTED);
         time_manager_init();
         mqtt_manager_start();
         if (s_wifi_event_group) {
@@ -185,6 +189,7 @@ esp_err_t wifi_manager_init(void)
         esp_wifi_set_max_tx_power(C3_SUPERMINI_TX_POWER);
     } else {
         ESP_LOGW(TAG, "Dispositivo no aprovisionado. Levantando servicio BLE Provisioning...");
+        led_indicator_set_mode(LED_MODE_PROVISIONING);
 
         get_device_service_name(s_service_name, sizeof(s_service_name));
         wifi_prov_scheme_ble_set_service_uuid((uint8_t *)s_custom_service_uuid);

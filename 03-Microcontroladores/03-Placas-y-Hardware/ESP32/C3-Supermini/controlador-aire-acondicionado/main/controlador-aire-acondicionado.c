@@ -15,6 +15,7 @@
 #include "wifi_manager.h"
 #include "time_manager.h"
 #include "mqtt_manager.h"
+#include "led_indicator.h"
 
 static const char *TAG = "AC_CONTROLLER";
 
@@ -288,6 +289,9 @@ static void transmit_current_state(void)
     ESP_ERROR_CHECK(rmt_tx_wait_all_done(s_tx_channel, 2000));
     vTaskDelay(pdMS_TO_TICKS(150)); // Disipar reflejos ópticos
 
+    // Feedback visual suave: ráfaga de destellos difuminados
+    led_indicator_trigger(LED_EVENT_IR_TX);
+
     // Reactivar RX
     rmt_enable(s_rx_channel);
     rmt_receive(s_rx_channel, s_rx_buffer, sizeof(s_rx_buffer), &s_rx_config);
@@ -315,7 +319,7 @@ static void on_mqtt_get_state(ac_state_t *out_state)
 static void print_help_menu(void)
 {
     printf("\n===================================================================\n");
-    printf("  CONTROLADOR INTELIGENTE AIRE ACONDICIONADO MARSHALL (Fase 4 - MQTT)\n");
+    printf("  CONTROLADOR INTELIGENTE AIRE ACONDICIONADO MARSHALL (Fase 5 - LED & MQTT)\n");
     printf("===================================================================\n");
     printf("  [+] o [=] : Subir temperatura (+1 C)\n");
     printf("  [-] o [_] : Bajar temperatura (-1 C)\n");
@@ -335,6 +339,7 @@ static void print_help_menu(void)
     printf("  MQTT : %s (Broker: %s)\n",
            mqtt_manager_is_connected() ? "CONECTADO" : "DESCONECTADO / ESPERANDO RED",
            MQTT_BROKER_URI);
+    printf("  LED  : Activo (GPIO %d, PWM Fade)\n", STATUS_LED_GPIO);
     char time_str[32];
     time_manager_get_time_str(time_str, sizeof(time_str));
     printf("  Hora : %s (%s)\n", time_str,
@@ -352,6 +357,9 @@ void app_main(void)
 {
     dg11j1_default_state(&s_current_state);
     s_last_cmd = AC_CMD_TEMP;
+
+    // Inicializar indicador LED con PWM y desvanecimiento suave por hardware
+    led_indicator_init();
 
     s_action_queue = xQueueCreate(10, sizeof(ui_action_t));
     assert(s_action_queue != NULL);
@@ -388,6 +396,9 @@ void app_main(void)
                     printf("  Comando: %s\n", dg11j1_cmd_to_string(decoded_cmd));
                     dg11j1_print_state(&s_current_state);
                     printf("===================================================================\n\n");
+
+                    // Feedback visual: doble pulso suave por lectura de control remoto
+                    led_indicator_trigger(LED_EVENT_IR_RX);
 
                     // Sincronizar en tiempo real con Mosquitto y Home Assistant
                     mqtt_manager_publish_state(&s_current_state);
