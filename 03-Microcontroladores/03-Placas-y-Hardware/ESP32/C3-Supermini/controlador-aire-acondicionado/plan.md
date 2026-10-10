@@ -7,9 +7,9 @@ Desarrollo de un firmware nativo en C sobre **ESP-IDF v5.5** para el microcontro
 ### Arquitectura de Integración
 - **Microcontrolador (ESP32-C3 SuperMini)**: Ejecuta firmware 100% nativo en C (ESP-IDF v5.5). Toda la comunicación de red es asíncrona y orientada a eventos mediante el componente oficial **`esp-mqtt`**, prescindiendo de servidores HTTP/REST embebidos para optimizar memoria RAM y ciclos de CPU.
 - **Servidor Domótico y Broker (Raspberry Pi 4 B)**:
-  - **Eclipse Mosquitto**: Broker MQTT central para el transporte ágil y liviano de mensajes.
+  - **Eclipse Mosquitto**: Broker MQTT central para el transporte ágil y liviano de mensajes (desplegado en Docker).
   - **Home Assistant**: Centro de control domótico. Detecta automáticamente el dispositivo vía **MQTT Discovery** (`homeassistant/climate/<id>/config` con `retain=true`), generando la tarjeta nativa de clima (*climate card*) sin requerir YAML manual ni diseño de interfaces web ad-hoc.
-  - **OpenClaw en Docker**: Agente de inteligencia artificial orquestador que procesa instrucciones en lenguaje natural e interactúa con el ecosistema a través de Home Assistant y MQTT.
+  - **OpenClaw y Ollama en Docker**: Ya desplegados y en ejecución en contenedores sobre la Raspberry Pi 4 B. OpenClaw actúa como agente orquestador en lenguaje natural que interactuará con el ecosistema a través de Home Assistant y MQTT.
 - **Sincronización Bidireccional en Tiempo Real**: El microcontrolador gestiona comandos remotos (`set`), disponibilidad mediante LWT (`availability`) y reporta cambios de estado consolidados (`status`), tanto si se ordenan por la red como si el usuario utiliza su control remoto físico DG11J1-01 (capturado por el demodulador TSOP1738 en GPIO 6).
 
 ---
@@ -101,20 +101,16 @@ Para garantizar un historial de commits limpio, atómico y consistente:
   - **Descarte de Dashboard Web ad-hoc y Servidor HTTP**: Se descartó la implementación de un servidor web local (`esp_http_server`) y el diseño de paneles web desde cero para maximizar la memoria RAM disponible, evitar sobrecarga de sockets TCP y eliminar vulnerabilidades web. Home Assistant proporciona de manera nativa la interfaz gráfica responsive y el control móvil.
   - **Descarte de Migración a ESPHome**: Se ratifica el firmware 100% nativo en C sobre **ESP-IDF v5.5** para preservar el control de bajo nivel del periférico RMT, la sincronización bidireccional por interrupciones en tiempo real y la mínima huella de memoria.
   - **Stack en Raspberry Pi 4 B**:
-    - **Eclipse Mosquitto**: Broker MQTT centralizado y liviano.
+    - **Eclipse Mosquitto (Docker)**: Broker MQTT centralizado y liviano desplegado en contenedor (según guía `/home/agust/Downloads/gu_a_completa_de_eclipse_mosquitto.md`).
     - **Home Assistant**: Plataforma domótica encargada del estado global, automatizaciones, historial e interfaz gráfica.
-    - **OpenClaw en Docker**: Agente de inteligencia artificial orquestador que interpreta lenguaje natural para consultar estado, ajustar temperaturas y disparar automatizaciones a través de Home Assistant y MQTT.
+    - **OpenClaw y Ollama (Docker)**: Ya en funcionamiento en contenedores. OpenClaw orquesta instrucciones en lenguaje natural para consultar estado, ajustar temperaturas y disparar automatizaciones a través de Home Assistant y MQTT.
 
-- **Cliente MQTT Nativo (`esp-mqtt`)**:
-  - Conexión persistente y eficiente al broker Mosquitto en la Raspberry Pi 4 B.
-  - **Disponibilidad LWT (Last Will and Testament)**: Publicación en `aire/living/availability` (`online` / `offline`), permitiendo a Home Assistant y OpenClaw detectar caídas de enlace al instante.
-  - **Suscripción a Comandos (`aire/living/set/...` o payload JSON)**: Recepción de directivas para modo (Cool, Heat, Dry, Fan, Auto, Off), temperatura deseada, velocidad de ventilador y swing, traduciéndolas de inmediato en tramas IR vía RMT hacia el split Marshall.
-  - **Publicación Reactiva de Estados (`aire/living/status`)**: Reporte inmediato del estado HVAC consolidado ante comandos remotos y, fundamentalmente, ante capturas del demodulador TSOP1738 (GPIO 6) cuando se use el control remoto físico.
-
-- **Home Assistant MQTT Discovery (`retain=true`)**:
-  - Al conectarse al broker, el ESP32 publica el payload de autoconfiguración en `homeassistant/climate/aire_marshall_living/config` con la bandera `retain=true`.
-  - Especifica los tópicos de estado, comando, disponibilidad y capacidades soportadas (`modes`, `fan_modes`, `swing_modes`, `temp_step=1`, `min_temp=16`, `max_temp=30`).
-  - Home Assistant autogenera la entidad `climate.aire_marshall_living` y su tarjeta gráfica correspondiente (*climate card*) sin requerir código YAML manual ni configuración en el servidor.
+- **Secuencia de Implementación de la Fase 4**:
+  1. **Servidor (Raspberry Pi 4 B - Docker)**: Despliegue del contenedor `eclipse-mosquitto:2` con `mosquitto.conf` (`listener 1883`, `allow_anonymous true`) y puerto `1883:1883`. Validación de publicación/suscripción local.
+  2. **Firmware (ESP32-C3 SuperMini - ESP-IDF v5.5)**: Desarrollo del módulo `mqtt_manager.h`/`.c` (`esp-mqtt`), configuración de la IP de la Raspberry Pi, LWT (`aire/living/availability`) y canales de telemetría.
+  3. **Pruebas de Conectividad y Telemetría Bidireccional**: Monitoreo en el broker (`mosquitto_sub -t "aire/#" -v`) al flashear el ESP32 para verificar conexión, LWT `online`, envío de comandos (`set`) y recepción de estados del sniffer físico.
+  4. **Home Assistant MQTT Discovery (`retain=true`)**: Publicación del payload de autoconfiguración en `homeassistant/climate/aire_marshall_living/config` para autogenerar la entidad `climate.aire_marshall_living` y su tarjeta gráfica sin tocar YAML.
+  5. **Integración con OpenClaw**: Pruebas de control por lenguaje natural (ej. "Pon el aire en 24 grados en frío") orquestadas por OpenClaw hacia la entidad climática.
 
 ### Fase 5: Detalles, Pulido y Refinamiento (Feedback Visual por LED PWM con Fade)
 
@@ -141,6 +137,7 @@ Para garantizar un historial de commits limpio, atómico y consistente:
   - [Ejemplo oficial ir_nec_transceiver](https://github.com/espressif/esp-idf/tree/master/examples/peripherals/rmt/ir_nec_transceiver)
   - [ESP-IDF MQTT Client (esp-mqtt)](https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32c3/api-reference/protocols/mqtt.html)
 - **Integraciones y Ecosistema Domótico**:
+  - [Guía de Configuración e Instalación de Eclipse Mosquitto](file:///home/agust/Downloads/gu_a_completa_de_eclipse_mosquitto.md)
   - [Home Assistant MQTT Climate Integration](https://www.home-assistant.io/integrations/climate.mqtt/)
   - [Home Assistant MQTT Discovery Standard](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery)
   - [Eclipse Mosquitto MQTT Broker](https://mosquitto.org/)
@@ -210,17 +207,32 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 
 ### 7.6 Siguientes Pasos (Fase 4: MQTT Nativo, Home Assistant Discovery y Orquestación OpenClaw)
 
-1. **Módulo Cliente MQTT Nativo (`esp-mqtt`)**:
+1. **Paso 1: Despliegue de Broker MQTT (Eclipse Mosquitto en Docker sobre Raspberry Pi 4 B)**:
+   - Configurar `mosquitto.conf` (`listener 1883`, `allow_anonymous true`) según la [Guía de Eclipse Mosquitto](file:///home/agust/Downloads/gu_a_completa_de_eclipse_mosquitto.md).
+   - Iniciar el contenedor `eclipse-mosquitto:2` con mapeo de puertos (`1883:1883`) y volumen montado.
+   - Habilitar el puerto en firewall si UFW está activo (`sudo ufw allow 1883/tcp`).
+   - Validar suscripción/publicación local con `docker exec -it broker-mosquitto mosquitto_sub -t "test/#" -v`.
+   - Obtener la IP local fija de la Raspberry Pi 4 B (ej. `192.168.0.X`).
+
+2. **Paso 2: Módulo Cliente MQTT Nativo en el ESP32-C3 SuperMini (`esp-mqtt`)**:
    - Crear arquitectura modular `mqtt_manager.h` y `mqtt_manager.c` sobre ESP-IDF v5.5.
-   - Configurar conexión al broker Mosquitto en la Raspberry Pi 4 B (URI `mqtt://<IP_PI>:1883`).
-   - Implementar canal LWT (`aire/living/availability`) con estados `online` y `offline` retenidos.
-2. **Generación y Publicación de Home Assistant MQTT Discovery**:
-   - Construir el payload JSON de auto-descubrimiento en `homeassistant/climate/aire_marshall_living/config` con `retain=true`.
-   - Mapear tópicos de estado y comando para temperatura (`temp`), modos (`mode`: `cool`, `heat`, `dry`, `fan_only`, `auto`, `off`), velocidades de ventilador (`fan_mode`: `auto`, `low`, `medium`, `high`) y oscilación (`swing_mode`: `on`, `off`).
-3. **Manejo Bidireccional de Tópicos y Sincronización Reactiva**:
-   - Suscripción y procesamiento de directivas entrantes (`aire/living/set/...`), actualizando el estado y emitiendo la ráfaga IR vía RMT al split Marshall.
-   - Publicación reactiva del estado consolidado ante órdenes remotas y, en especial, tras la decodificación de señales del control remoto físico DG11J1-01 recibidas por el receptor TSOP1738 (GPIO 6).
-4. **Validación en Raspberry Pi 4 B con OpenClaw en Docker**:
-   - Comprobar la generación automática de la tarjeta nativa de clima (*climate card*) en Home Assistant sin escribir YAML.
-   - Probar la orquestación y control por lenguaje natural a través del contenedor Docker de OpenClaw.
-5. **Fase 5 (Refinamiento)**: Efectos visuales de LED PWM difuminado (`ledc` en GPIO 2).
+   - Configurar conexión al broker Mosquitto en la Raspberry Pi 4 B (`mqtt://<IP_RASPBERRY>:1883`).
+   - Implementar canal LWT (`aire/living/availability`) con estados `online` y `offline` retenidos (`retain=true`).
+   - Implementar publicación reactiva de estados (`aire/living/status`) y suscripción a órdenes (`aire/living/set/#`).
+
+3. **Paso 3: Pruebas de Conexión y Telemetría en Vivo (ESP32 <-> Mosquitto)**:
+   - Monitorear en tiempo real desde la Raspberry Pi: `docker exec -it broker-mosquitto mosquitto_sub -t "aire/#" -v`.
+   - Flashear el ESP32-C3 y verificar conexión inmediata al broker y publicación de `availability -> online`.
+   - Probar publicación remota de comandos desde la terminal de la Pi (`aire/living/set/temp -> 25`) y verificar recepción y disparo IR en el ESP32.
+   - Disparar el control físico DG11J1-01 hacia el TSOP1738 y verificar que el estado actualizado se publica en `aire/living/status`.
+
+4. **Paso 4: Home Assistant & MQTT Discovery**:
+   - Habilitar la integración MQTT en Home Assistant apuntando al contenedor Mosquitto.
+   - Enviar desde el ESP32 el payload de auto-descubrimiento en `homeassistant/climate/aire_marshall_living/config` con `retain=true`.
+   - Confirmar la autogeneración de la tarjeta climática nativa (*climate card*) interactiva en Home Assistant sin configuración YAML.
+
+5. **Paso 5: Orquestación Inteligente con OpenClaw (Docker)**:
+   - Integrar OpenClaw (ya corriendo en Docker) con la entidad `climate.aire_marshall_living` de Home Assistant o vía MQTT.
+   - Probar control conversacional en lenguaje natural asistido por el LLM en Ollama.
+
+6. **Fase 5 (Refinamiento)**: Efectos visuales de LED PWM difuminado (`ledc` en GPIO 2).
