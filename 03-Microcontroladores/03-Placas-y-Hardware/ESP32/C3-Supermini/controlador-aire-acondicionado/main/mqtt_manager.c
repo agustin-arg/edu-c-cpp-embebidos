@@ -438,6 +438,15 @@ esp_err_t mqtt_manager_publish_remote_event(const ac_state_t *state, ac_cmd_t cm
     }
 
     cJSON_AddStringToObject(root, "source", "remote_DG11J1");
+
+    char msg_desc[128];
+    snprintf(msg_desc, sizeof(msg_desc), "Señal detectada del control remoto: %s (%s, %d C, Fan %s)",
+             dg11j1_cmd_to_string(cmd),
+             state->power ? dg11j1_mode_to_string(state->mode) : "Apagado",
+             state->temp_c,
+             dg11j1_fan_to_string(state->fan));
+    cJSON_AddStringToObject(root, "message", msg_desc);
+
     cJSON_AddStringToObject(root, "command", dg11j1_cmd_to_string(cmd));
     cJSON_AddNumberToObject(root, "cmd_code", (int)cmd);
     cJSON_AddStringToObject(root, "power", state->power ? "ON" : "OFF");

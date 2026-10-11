@@ -389,6 +389,11 @@ void app_main(void)
 
         // 1. Escucha de señales del control físico (Sniffing & Decodificación)
         if (xQueueReceive(s_rx_done_queue, &rx_symbols_count, pdMS_TO_TICKS(30)) == pdPASS) {
+            if (rx_symbols_count >= 20) {
+                printf("\n>>> [SENSOR IR] ¡Señal infrarroja detectada en el receptor! (%u símbolos recibidos) <<<\n",
+                       (unsigned int)rx_symbols_count);
+            }
+
             if (rx_symbols_count >= 160) {
                 ac_state_t decoded_state;
                 ac_cmd_t   decoded_cmd;
@@ -405,25 +410,28 @@ void app_main(void)
                     char hex_str[70];
                     dg11j1_bytes_to_hex(raw_bytes, DG11J1_STATE_LENGTH, hex_str, sizeof(hex_str));
 
-                    printf("\n===================================================================\n");
-                    printf("  [SYNC REMOTO FISICO] Control remoto DG11J1-01 detectado!\n");
-                    printf("  Comando: %s (0x%02X)\n", dg11j1_cmd_to_string(decoded_cmd), (unsigned int)decoded_cmd);
-                    printf("  Trama Cruda (21B): %s\n", hex_str);
+                    printf("===================================================================\n");
+                    printf("  [SEÑAL DEL CONTROL DETECTADA] Trama válida DG11J1-01 recibida!\n");
+                    printf("  - Comando identificado : %s (0x%02X)\n", dg11j1_cmd_to_string(decoded_cmd), (unsigned int)decoded_cmd);
+                    printf("  - Trama cruda (21B)    : %s\n", hex_str);
+                    printf("  - Estado actualizado   : ");
                     dg11j1_print_state(&s_current_state);
-                    printf("===================================================================\n\n");
+                    printf("  - Sincronización MQTT  : Publicando evento y nuevo estado al broker...\n");
+                    printf("===================================================================\n");
 
                     // Feedback visual: doble pulso suave por lectura de control remoto
                     led_indicator_trigger(LED_EVENT_IR_RX);
 
                     // Publicar evento remoto detallado y sincronizar telemetría MQTT con Home Assistant
                     mqtt_manager_publish_remote_event(&s_current_state, decoded_cmd, raw_bytes);
+                    printf(">>> [OK] Señal del control procesada, valores del ESP32 actualizados y publicados por MQTT.\n\n");
                 } else {
-                    ESP_LOGD(TAG, "[RX SNIFFER] Ráfaga de %u símbolos capturada pero no validó protocolo DG11J1",
-                             (unsigned int)rx_symbols_count);
+                    printf(">>> [AVISO] Se detectó una señal IR (%u símbolos) pero no se reconoció el protocolo DG11J1.\n\n",
+                           (unsigned int)rx_symbols_count);
                 }
-            } else {
-                ESP_LOGD(TAG, "[RX SNIFFER] Descartada ráfaga corta (%u símbolos < 160)",
-                         (unsigned int)rx_symbols_count);
+            } else if (rx_symbols_count >= 20) {
+                printf(">>> [AVISO] Ráfaga IR corta (%u símbolos < 160). Descartando ruido ambiental.\n\n",
+                       (unsigned int)rx_symbols_count);
             }
             // Rearmar recepción
             ESP_ERROR_CHECK(rmt_receive(s_rx_channel, s_rx_buffer, sizeof(s_rx_buffer), &s_rx_config));
