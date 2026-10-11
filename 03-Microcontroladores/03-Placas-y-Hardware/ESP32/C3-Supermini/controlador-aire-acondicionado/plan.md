@@ -246,15 +246,32 @@ Para garantizar un historial de commits limpio, atómico y consistente:
 
 ---
 
-### 7.8 Siguientes Pasos (Próximas Sesiones)
+### 7.8 Hito Alcanzado: Sincronización Bidireccional del Sensor Infrarrojo (TSOP1738 en GPIO 6) y Publicación MQTT
 
-1. **Paso 1: Sincronización Fina del Sensor Infrarrojo (Sniffer TSOP1738 en GPIO 6)**:
-   - Realizar pruebas de campo exhaustivas con el control remoto físico **DG11J1-01** apuntando directamente al demodulador TSOP1738.
-   - Asegurar que ante cualquier comando físico pulsado en el control remoto (cambio de grados, encendido/apagado, velocidad o modo):
-     - El decodificador identifique y valide la trama de 21 bytes sin falsos positivos.
-     - Se actualice la variable global de estado `s_current_state`.
-     - Se dispare el feedback visual de doble pulso suave en el LED.
-     - Se publique de inmediato la telemetría actualizada por MQTT a `aire/living/status` para reflejar el cambio en tiempo real en la tarjeta de Home Assistant.
+- **Blindaje del Receptor y Tolerancia a Glitches**:
+  - Pull-up interno explícito configurado en **GPIO 6** (`gpio_set_pull_mode(IR_RX_GPIO, GPIO_PULLUP_ONLY)`).
+  - Algoritmo de escaneo de cabecera en `dg11j1_decode_rmt_symbols`: busca la marca (~8950 µs) y el espacio (~4484 µs) dentro del tren de símbolos recibidos, descartando ruidos ópticos o transitorios previos sin perder la trama del control.
+  - Cola de eventos RMT ampliada a 4 elementos y purga automática (`xQueueReset`) al reactivar el receptor para evitar la captura de rebotes ópticos de nuestras propias transmisiones.
+- **Validación Estricta de Protocolo (Antirruido / Cero Falsos Positivos)**:
+  - Verificación de la firma de 2 bytes característica de DG11J1 / Whirlpool (`0x83 0x06`).
+  - Validación cruzada bitwise de los dos checksums XOR (`Sum1` en byte 13 y `Sum2` en byte 20).
+- **Corrección Crítica de la Lógica de Power (Toggle vs Ajuste Operativo)**:
+  - En el protocolo DG11J1, el bit 2 del byte 2 es *Power Toggle* y solo viaja en alto si se presionó la tecla de encendido/apagado.
+  - Si el usuario presiona **Power** (`cmd == AC_CMD_POWER`), el estado de encendido conmuta con respecto al estado previo (`out_state->power = !prev_state->power`).
+  - Si el usuario presiona cualquier ajuste operativo (**Temperatura**, **Modo**, **Velocidad de Fan**, **Swing**), el equipo se mantiene o activa en **ON**, evitando que ajustes de grados apaguen erróneamente la unidad en el ESP32.
+- **Telemetría y Publicación MQTT Detallada**:
+  - Implementación de `mqtt_manager_publish_remote_event`:
+    - Publica el evento inmediato a `aire/living/remote` con el nombre del comando (`"command": "Set Temperatura"`), código numérico (`"cmd_code"`), estado resultante y la secuencia cruda completa de 21 bytes en hexadecimal (`"raw_hex": "83 06 00 90 ..."`).
+    - Actualiza simultáneamente el estado retenido en `aire/living/status` (`retain=true`), reflejando al instante la nueva temperatura, modo, fan y swing en la tarjeta nativa de clima y el switch de Home Assistant.
+  - Feedback visual sincronizado: doble pulso suave difuminado en el LED onboard (`LED_EVENT_IR_RX`) confirmando la recepción física.
+
+---
+
+### 7.9 Siguientes Pasos (Próximas Sesiones)
+
+1. **Paso 1: Pruebas de Campo con el Control Físico DG11J1-01**:
+   - Apuntar el control físico al receptor TSOP1738 (GPIO 6) y pulsar distintos botones (cambio de temperatura, modo, fan, swing, power).
+   - Verificar en consola y mediante `mosquitto_sub -t "aire/#" -v` la llegada inmediata de la secuencia en `aire/living/remote` y el reflejo instantáneo en la interfaz de Home Assistant.
 
 2. **Paso 2: Orquestación Conversacional con OpenClaw (Docker en Raspberry Pi 4 B)**:
    - Integrar o crear la skill en OpenClaw para interactuar con la entidad de Home Assistant o directamente vía MQTT mediante lenguaje natural (ej. *"OpenClaw, enciende el aire a 24 en frío"*).

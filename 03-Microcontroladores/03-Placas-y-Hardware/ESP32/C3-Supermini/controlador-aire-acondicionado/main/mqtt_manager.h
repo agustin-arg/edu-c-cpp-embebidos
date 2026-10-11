@@ -16,6 +16,7 @@ extern "C" {
 #define MQTT_TOPIC_BASE       "aire/living"
 #define MQTT_TOPIC_AVAIL      MQTT_TOPIC_BASE "/availability"
 #define MQTT_TOPIC_STATUS     MQTT_TOPIC_BASE "/status"
+#define MQTT_TOPIC_REMOTE     MQTT_TOPIC_BASE "/remote"
 #define MQTT_TOPIC_SET_SUB    MQTT_TOPIC_BASE "/set/#"
 
 // Callback invocado cuando se recibe una directiva remota válida por MQTT
@@ -55,6 +56,17 @@ bool mqtt_manager_is_connected(void);
  * @return ESP_OK si el mensaje se encoló con éxito para publicación.
  */
 esp_err_t mqtt_manager_publish_state(const ac_state_t *state);
+
+/**
+ * @brief Publica el evento capturado desde el control físico en 'aire/living/remote'
+ *        y sincroniza el estado en 'aire/living/status' (retain=true).
+ *
+ * @param state     Puntero al nuevo estado del AC resultante.
+ * @param cmd       Comando identificado enviado por el control físico.
+ * @param raw_bytes Trama cruda de 21 bytes recibida (o NULL).
+ * @return ESP_OK si el mensaje se encoló con éxito para publicación.
+ */
+esp_err_t mqtt_manager_publish_remote_event(const ac_state_t *state, ac_cmd_t cmd, const uint8_t *raw_bytes);
 
 /**
  * @brief Publica el payload de Home Assistant MQTT Discovery en 'homeassistant/climate/.../config' (retain=true).

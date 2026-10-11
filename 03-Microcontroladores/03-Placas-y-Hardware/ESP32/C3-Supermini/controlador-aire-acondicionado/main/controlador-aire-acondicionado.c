@@ -210,6 +210,9 @@ static void init_ir_subsystem(void)
 {
     ESP_LOGI(TAG, "Inicializando subsistema RMT...");
 
+    // Asegurar nivel ALTO por pull-up interno en línea del receptor demodulador TSOP (GPIO 6)
+    gpio_set_pull_mode(IR_RX_GPIO, GPIO_PULLUP_ONLY);
+
     // 1. Canal RX (GPIO 6)
     rmt_rx_channel_config_t rx_channel_cfg = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
@@ -219,7 +222,7 @@ static void init_ir_subsystem(void)
     };
     ESP_ERROR_CHECK(rmt_new_rx_channel(&rx_channel_cfg, &s_rx_channel));
 
-    s_rx_done_queue = xQueueCreate(2, sizeof(size_t));
+    s_rx_done_queue = xQueueCreate(4, sizeof(size_t));
     assert(s_rx_done_queue != NULL);
 
     rmt_rx_event_callbacks_t cbs = {
@@ -254,7 +257,7 @@ static void init_ir_subsystem(void)
     ESP_ERROR_CHECK(rmt_enable(s_tx_channel));
     ESP_ERROR_CHECK(rmt_enable(s_rx_channel));
 
-    ESP_LOGI(TAG, "RMT listo: TX=GPIO%d (38kHz), RX=GPIO%d", IR_TX_GPIO, IR_RX_GPIO);
+    ESP_LOGI(TAG, "RMT listo: TX=GPIO%d (38kHz), RX=GPIO%d (Pull-Up)", IR_TX_GPIO, IR_RX_GPIO);
 }
 
 // Transmite el estado actual hacia el equipo
@@ -292,8 +295,9 @@ static void transmit_current_state(void)
     // Feedback visual suave: ráfaga de destellos difuminados
     led_indicator_trigger(LED_EVENT_IR_TX);
 
-    // Reactivar RX
+    // Reactivar RX y descartar eventos residuales en cola
     rmt_enable(s_rx_channel);
+    xQueueReset(s_rx_done_queue);
     rmt_receive(s_rx_channel, s_rx_buffer, sizeof(s_rx_buffer), &s_rx_config);
 
     printf(">>> [TX OK] Trama infrarroja enviada con éxito.\n\n");
@@ -388,21 +392,38 @@ void app_main(void)
             if (rx_symbols_count >= 160) {
                 ac_state_t decoded_state;
                 ac_cmd_t   decoded_cmd;
-                if (dg11j1_decode_rmt_symbols(s_rx_buffer, rx_symbols_count, &decoded_state, &decoded_cmd)) {
+                uint8_t    raw_bytes[DG11J1_STATE_LENGTH];
+
+                if (dg11j1_decode_rmt_symbols(s_rx_buffer, rx_symbols_count,
+                                             &s_current_state,
+                                             &decoded_state,
+                                             &decoded_cmd,
+                                             raw_bytes)) {
                     s_current_state = decoded_state;
                     s_last_cmd = decoded_cmd;
+
+                    char hex_str[70];
+                    dg11j1_bytes_to_hex(raw_bytes, DG11J1_STATE_LENGTH, hex_str, sizeof(hex_str));
+
                     printf("\n===================================================================\n");
                     printf("  [SYNC REMOTO FISICO] Control remoto DG11J1-01 detectado!\n");
-                    printf("  Comando: %s\n", dg11j1_cmd_to_string(decoded_cmd));
+                    printf("  Comando: %s (0x%02X)\n", dg11j1_cmd_to_string(decoded_cmd), (unsigned int)decoded_cmd);
+                    printf("  Trama Cruda (21B): %s\n", hex_str);
                     dg11j1_print_state(&s_current_state);
                     printf("===================================================================\n\n");
 
                     // Feedback visual: doble pulso suave por lectura de control remoto
                     led_indicator_trigger(LED_EVENT_IR_RX);
 
-                    // Sincronizar en tiempo real con Mosquitto y Home Assistant
-                    mqtt_manager_publish_state(&s_current_state);
+                    // Publicar evento remoto detallado y sincronizar telemetría MQTT con Home Assistant
+                    mqtt_manager_publish_remote_event(&s_current_state, decoded_cmd, raw_bytes);
+                } else {
+                    ESP_LOGD(TAG, "[RX SNIFFER] Ráfaga de %u símbolos capturada pero no validó protocolo DG11J1",
+                             (unsigned int)rx_symbols_count);
                 }
+            } else {
+                ESP_LOGD(TAG, "[RX SNIFFER] Descartada ráfaga corta (%u símbolos < 160)",
+                         (unsigned int)rx_symbols_count);
             }
             // Rearmar recepción
             ESP_ERROR_CHECK(rmt_receive(s_rx_channel, s_rx_buffer, sizeof(s_rx_buffer), &s_rx_config));

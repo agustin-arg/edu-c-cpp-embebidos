@@ -107,13 +107,23 @@ size_t dg11j1_frame_to_rmt_symbols(const uint8_t *frame_bytes, rmt_symbol_word_t
 /**
  * @brief Intenta decodificar un tren de símbolos RMT capturados por el TSOP1738.
  *
- * @param symbols Buffer de símbolos RMT recibidos.
- * @param num_symbols Cantidad de símbolos recibidos.
- * @param out_state Puntero donde se almacenará el estado decodificado si es exitoso.
- * @param out_cmd Puntero opcional donde se almacenará el comando ejecutado.
- * @return true si la trama fue decodificada y validada con checksum correcto, false si no.
+ * @param symbols       Buffer de símbolos RMT recibidos.
+ * @param num_symbols   Cantidad de símbolos recibidos.
+ * @param prev_state    Puntero al estado previo del AC (o NULL). Permite sincronizar Power (Toggle vs Activo).
+ * @param out_state     Puntero donde se almacenará el estado decodificado si es exitoso.
+ * @param out_cmd       Puntero opcional donde se almacenará el comando ejecutado.
+ * @param out_raw_bytes Buffer opcional de al menos 21 bytes donde se copiarán los bytes decodificados (o NULL).
+ * @return true si la trama fue decodificada y validada con cabecera y checksums correctos, false si no.
  */
-bool dg11j1_decode_rmt_symbols(const rmt_symbol_word_t *symbols, size_t num_symbols, ac_state_t *out_state, ac_cmd_t *out_cmd);
+bool dg11j1_decode_rmt_symbols(const rmt_symbol_word_t *symbols, size_t num_symbols,
+                               const ac_state_t *prev_state,
+                               ac_state_t *out_state, ac_cmd_t *out_cmd,
+                               uint8_t *out_raw_bytes);
+
+/**
+ * @brief Convierte un array de bytes en una cadena legible hexadecimal separada por espacios.
+ */
+void dg11j1_bytes_to_hex(const uint8_t *bytes, size_t len, char *out_hex, size_t out_size);
 
 /**
  * @brief Imprime en texto legible el estado del aire acondicionado.

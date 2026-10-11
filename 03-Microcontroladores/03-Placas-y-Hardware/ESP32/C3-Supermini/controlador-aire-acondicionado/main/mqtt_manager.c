@@ -426,6 +426,48 @@ esp_err_t mqtt_manager_publish_state(const ac_state_t *state)
     return ESP_OK;
 }
 
+esp_err_t mqtt_manager_publish_remote_event(const ac_state_t *state, ac_cmd_t cmd, const uint8_t *raw_bytes)
+{
+    if (!s_client || !s_is_connected || !state) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    cJSON_AddStringToObject(root, "source", "remote_DG11J1");
+    cJSON_AddStringToObject(root, "command", dg11j1_cmd_to_string(cmd));
+    cJSON_AddNumberToObject(root, "cmd_code", (int)cmd);
+    cJSON_AddStringToObject(root, "power", state->power ? "ON" : "OFF");
+    cJSON_AddStringToObject(root, "mode", ac_mode_to_ha_str(state));
+    cJSON_AddNumberToObject(root, "temperature", state->temp_c);
+    cJSON_AddStringToObject(root, "fan_mode", ac_fan_to_ha_str(state->fan));
+    cJSON_AddStringToObject(root, "swing_mode", state->swing ? "on" : "off");
+    cJSON_AddStringToObject(root, "light", state->light ? "ON" : "OFF");
+
+    if (raw_bytes != NULL) {
+        char hex_buf[70];
+        dg11j1_bytes_to_hex(raw_bytes, DG11J1_STATE_LENGTH, hex_buf, sizeof(hex_buf));
+        cJSON_AddStringToObject(root, "raw_hex", hex_buf);
+    }
+
+    char *json_str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (!json_str) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    int msg_id = esp_mqtt_client_publish(s_client, MQTT_TOPIC_REMOTE, json_str, 0, 1, 0);
+    ESP_LOGI(TAG, "[MQTT PUB] Evento remoto emitido a '%s' (msg_id=%d): %s", MQTT_TOPIC_REMOTE, msg_id, json_str);
+    free(json_str);
+
+    // Sincronizar el estado consolidado retenido para Home Assistant
+    return mqtt_manager_publish_state(state);
+}
+
 esp_err_t mqtt_manager_publish_discovery(void)
 {
     if (!s_client || !s_is_connected) {

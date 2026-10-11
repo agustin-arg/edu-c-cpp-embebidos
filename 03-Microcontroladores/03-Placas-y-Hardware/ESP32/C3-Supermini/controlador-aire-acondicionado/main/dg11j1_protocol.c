@@ -253,23 +253,40 @@ size_t dg11j1_frame_to_rmt_symbols(const uint8_t *frame_bytes, rmt_symbol_word_t
     return s_idx;
 }
 
-bool dg11j1_decode_rmt_symbols(const rmt_symbol_word_t *symbols, size_t num_symbols, ac_state_t *out_state, ac_cmd_t *out_cmd)
+bool dg11j1_decode_rmt_symbols(const rmt_symbol_word_t *symbols, size_t num_symbols,
+                               const ac_state_t *prev_state,
+                               ac_state_t *out_state, ac_cmd_t *out_cmd,
+                               uint8_t *out_raw_bytes)
 {
     if (!symbols || num_symbols < 170) return false;
 
-    size_t s_idx = 0;
+    // 1. Buscar cabecera DG11J1 (Mark ~8950 µs, Space ~4484 µs)
+    // Permite tolerar ruidos, espurias o desfases temporales previos en el TSOP
+    size_t header_idx = 0;
+    bool header_found = false;
 
-    // 1. Validar Cabecera (Mark ~8950 µs, Space ~4484 µs)
-    if (!match_duration(symbols[s_idx].duration0, DG11J1_HDR_MARK_US) ||
-        !match_duration(symbols[s_idx].duration1, DG11J1_HDR_SPACE_US)) {
+    for (size_t i = 0; i < num_symbols; i++) {
+        if ((num_symbols - i) < 170) {
+            break;
+        }
+        if (match_duration(symbols[i].duration0, DG11J1_HDR_MARK_US) &&
+            match_duration(symbols[i].duration1, DG11J1_HDR_SPACE_US)) {
+            header_idx = i;
+            header_found = true;
+            break;
+        }
+    }
+
+    if (!header_found) {
+        ESP_LOGD(TAG, "No se halló cabecera válida DG11J1 en %u símbolos", (unsigned int)num_symbols);
         return false;
     }
-    s_idx++;
 
+    size_t s_idx = header_idx + 1;
     uint8_t decoded_bytes[DG11J1_STATE_LENGTH];
     memset(decoded_bytes, 0, sizeof(decoded_bytes));
 
-    // Definición de las 3 secciones: {bytes_count, has_gap_after}
+    // Definición de las 3 secciones: {bytes_start, count, has_gap_after}
     const struct {
         uint8_t byte_start;
         uint8_t count;
@@ -288,7 +305,7 @@ bool dg11j1_decode_rmt_symbols(const rmt_symbol_word_t *symbols, size_t num_symb
             for (int bit = 0; bit < 8; bit++) {
                 if (s_idx >= num_symbols) return false;
 
-                // En TSOP demodulado, level0 suele ser el pulso activo (Mark)
+                // En TSOP demodulado, level0 es el pulso activo de portadora (Mark)
                 uint32_t mark_us = symbols[s_idx].duration0;
                 uint32_t space_us = symbols[s_idx].duration1;
 
@@ -299,9 +316,9 @@ bool dg11j1_decode_rmt_symbols(const rmt_symbol_word_t *symbols, size_t num_symb
                 if (match_duration(space_us, DG11J1_ONE_SPACE_US)) {
                     byte_val |= (1 << bit);
                 } else if (match_duration(space_us, DG11J1_ZERO_SPACE_US)) {
-                    // Bit es 0, ya está en 0
+                    // Bit es 0
                 } else {
-                    return false; // Tiempo de space no concuerda
+                    return false; // Duración de space no concuerda
                 }
                 s_idx++;
             }
@@ -319,8 +336,15 @@ bool dg11j1_decode_rmt_symbols(const rmt_symbol_word_t *symbols, size_t num_symb
         }
     }
 
-    // 2. Validar Checksums
-    // Sum1 = XOR de bytes 2 a 12
+    // 2. Validar firma de identificación del protocolo DG11J1 / Whirlpool (0x83 0x06)
+    if (decoded_bytes[0] != 0x83 || decoded_bytes[1] != 0x06) {
+        ESP_LOGW(TAG, "Firma DG11J1 inválida (esperado 0x83 0x06, recibido 0x%02X 0x%02X)",
+                 decoded_bytes[0], decoded_bytes[1]);
+        return false;
+    }
+
+    // 3. Validar Checksums XOR
+    // Sum1 = XOR de bytes 2 a 12 inclusive
     uint8_t sum1 = 0;
     for (int i = 2; i <= 12; i++) {
         sum1 ^= decoded_bytes[i];
@@ -330,7 +354,7 @@ bool dg11j1_decode_rmt_symbols(const rmt_symbol_word_t *symbols, size_t num_symb
         return false;
     }
 
-    // Sum2 = XOR de bytes 14 a 19
+    // Sum2 = XOR de bytes 14 a 19 inclusive
     uint8_t sum2 = 0;
     for (int i = 14; i <= 19; i++) {
         sum2 ^= decoded_bytes[i];
@@ -340,23 +364,64 @@ bool dg11j1_decode_rmt_symbols(const rmt_symbol_word_t *symbols, size_t num_symb
         return false;
     }
 
-    // 3. Extraer variables al estado
+    // 4. Extraer variables al estado consolidado
+    ac_cmd_t cmd = (ac_cmd_t)decoded_bytes[15];
+
     if (out_state) {
-        out_state->power = (decoded_bytes[2] & (1 << 2)) != 0;
+        if (prev_state != NULL) {
+            *out_state = *prev_state;
+        } else {
+            dg11j1_default_state(out_state);
+        }
+
+        // Lógica de encendido/apagado en DG11J1:
+        // Bit 2 de byte 2 es 'Power Toggle'.
+        // Si el usuario pulsó el botón Power (cmd == AC_CMD_POWER o bit 2 activo), conmuta el estado de encendido.
+        // Si pulsó cualquier otro ajuste (Temp, Modo, Fan, Swing), el equipo está operando activamente (ON).
+        if (cmd == AC_CMD_POWER || (decoded_bytes[2] & (1 << 2)) != 0) {
+            out_state->power = prev_state ? !prev_state->power : true;
+        } else {
+            out_state->power = true;
+        }
+
         out_state->fan   = (ac_fan_t)(decoded_bytes[2] & 0x03);
         out_state->swing = (decoded_bytes[2] & (1 << 7)) != 0;
 
         out_state->mode  = (ac_mode_t)(decoded_bytes[3] & 0x07);
         uint8_t temp_val = (decoded_bytes[3] >> 4) & 0x0F;
         out_state->temp_c = temp_val + DG11J1_TEMP_MIN;
+        if (out_state->temp_c < DG11J1_TEMP_MIN) out_state->temp_c = DG11J1_TEMP_MIN;
+        if (out_state->temp_c > DG11J1_TEMP_MAX) out_state->temp_c = DG11J1_TEMP_MAX;
 
         out_state->light = ((decoded_bytes[6] & (1 << 5)) == 0);
     }
 
     if (out_cmd) {
-        *out_cmd = (ac_cmd_t)decoded_bytes[15];
+        *out_cmd = cmd;
     }
 
-    ESP_LOGI(TAG, "Trama DG11J1 decodificada y validada con éxito!");
+    if (out_raw_bytes) {
+        memcpy(out_raw_bytes, decoded_bytes, DG11J1_STATE_LENGTH);
+    }
+
+    ESP_LOGI(TAG, "Trama DG11J1 decodificada y validada con éxito! (Cmd: %s, Power: %s, Temp: %d C)",
+             dg11j1_cmd_to_string(cmd),
+             (out_state && out_state->power) ? "ON" : "OFF",
+             out_state ? out_state->temp_c : 0);
     return true;
+}
+
+void dg11j1_bytes_to_hex(const uint8_t *bytes, size_t len, char *out_hex, size_t out_size)
+{
+    if (!out_hex || out_size == 0) return;
+    out_hex[0] = '\0';
+    if (!bytes || len == 0) return;
+
+    size_t pos = 0;
+    for (size_t i = 0; i < len && pos + 3 < out_size; i++) {
+        int written = snprintf(out_hex + pos, out_size - pos, "%s%02X", (i > 0) ? " " : "", bytes[i]);
+        if (written > 0) {
+            pos += written;
+        }
+    }
 }
