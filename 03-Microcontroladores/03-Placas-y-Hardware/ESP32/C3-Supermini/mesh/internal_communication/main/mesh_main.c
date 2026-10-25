@@ -438,6 +438,21 @@ void app_main(void)
     memcpy((uint8_t *) &cfg.mesh_ap.password, CONFIG_MESH_AP_PASSWD,
            strlen(CONFIG_MESH_AP_PASSWD));
     ESP_ERROR_CHECK(esp_mesh_set_config(&cfg));
+
+    /* Adaptaciones mínimas necesarias para ESP32-C3 Supermini:
+     * 1. Habilitar PMF para routers modernos con WPA2/WPA3 mixto (evita auth expire).
+     * 2. Desactivar modem sleep (evita pérdida de paquetes en el C3).
+     * 3. Ajustar potencia a 15 dBm para estabilidad del regulador de la placa. */
+    wifi_config_t sta_cfg;
+    if (esp_wifi_get_config(WIFI_IF_STA, &sta_cfg) == ESP_OK) {
+        sta_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+        sta_cfg.sta.pmf_cfg.capable = true;
+        sta_cfg.sta.pmf_cfg.required = false;
+        esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
+    }
+    esp_wifi_set_ps(WIFI_PS_NONE);
+    esp_wifi_set_max_tx_power(60);
+
     /* mesh start */
     ESP_ERROR_CHECK(esp_mesh_start());
 #ifdef CONFIG_MESH_ENABLE_PS

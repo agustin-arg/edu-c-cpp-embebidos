@@ -38,6 +38,12 @@ esp_err_t mesh_light_init(void)
     }
     s_light_inited = true;
 
+    /* NOTA ESP32-C3 Supermini:
+     * Se deshabilita la inicialización de LEDC PWM en GPIO 0, 2, 4, 5 del ejemplo original
+     * (diseñado para la placa ESP-WROVER-KIT). En el ESP32-C3, GPIO 2 es pin de strapping
+     * y calibración de RF; generar PWM en él interfiere con la radio Wi-Fi.
+     */
+#if 0
     ledc_timer_config_t ledc_timer = {
         .duty_resolution = LEDC_TIMER_13_BIT,
         .freq_hz = 5000,
@@ -69,65 +75,13 @@ esp_err_t mesh_light_init(void)
     ledc_fade_func_install(0);
 
     mesh_light_set(MESH_LIGHT_INIT);
+#endif
     return ESP_OK;
 }
 
 esp_err_t mesh_light_set(int color)
 {
-    switch (color) {
-    case MESH_LIGHT_RED:
-        /* Red */
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 3000);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, 0);
-        break;
-    case MESH_LIGHT_GREEN:
-        /* Green */
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 3000);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, 0);
-        break;
-    case MESH_LIGHT_BLUE:
-        /* Blue */
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, 3000);
-        break;
-    case MESH_LIGHT_YELLOW:
-        /* Yellow */
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 3000);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 3000);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, 0);
-        break;
-    case MESH_LIGHT_PINK:
-        /* Pink */
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 3000);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, 3000);
-        break;
-    case MESH_LIGHT_INIT:
-        /* can't say */
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 3000);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, 3000);
-        break;
-    case MESH_LIGHT_WARNING:
-        /* warning */
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 3000);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 3000);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, 3000);
-        break;
-    default:
-        /* off */
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2, 0);
-    }
-
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_2);
-
+    /* Deshabilitado en C3 Supermini para no interferir con pines de hardware */
     return ESP_OK;
 }
 
