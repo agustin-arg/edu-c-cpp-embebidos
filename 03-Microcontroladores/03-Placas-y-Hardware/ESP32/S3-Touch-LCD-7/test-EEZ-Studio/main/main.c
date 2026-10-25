@@ -1,26 +1,34 @@
 #include <stdio.h>
 #include "esp_log.h"
-#include "lvgl.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+// Driver de hardware de pantalla y adaptador LVGL
+#include "waveshare_rgb_lcd_port.h"
+#include "esp_lv_adapter.h"
+
+// Interfaz generada por EEZ Studio
 #include "ui.h"
+
+static const char *TAG = "main";
 
 void app_main(void)
 {
-// 1. Inicializar los pines y el bus RGB de la pantalla de 7"
-bsp_display_init();
+    ESP_LOGI(TAG, "Iniciando Waveshare ESP32-S3 Touch LCD 7 con EEZ Studio...");
 
-// 2. Inicializar el driver del touch (GT911)
-bsp_touch_init();
+    // 1. Inicializar pantalla, backlight, táctil y LVGL
+    ESP_ERROR_CHECK(bsp_display_start());
 
-// 3. Inicializar la librería LVGL
-lv_init();
+    // 2. Cargar la interfaz de EEZ Studio (protegida por el mutex del adaptador)
+    if (esp_lv_adapter_lock(-1) == ESP_OK) {
+        ESP_LOGI(TAG, "Cargando pantalla de EEZ Studio...");
+        ui_init();
+        esp_lv_adapter_unlock();
+    }
 
-// 4. Cargar la interfaz que diseñaste en EEZ Studio:
-ui_init();
+    ESP_LOGI(TAG, "¡Sistema iniciado! Pantalla lista.");
 
-// 5. El bucle de refresco de LVGL (suele correr en una tarea de FreeRTOS)
-while (1) {
-lv_timer_handler();  // Atiende eventos, animaciones y refresco
-ui_tick();           // Ticks internos de EEZ Studio
-vTaskDelay(pdMS_TO_TICKS(10));
-}
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
 }
