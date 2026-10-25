@@ -22,8 +22,8 @@ static const char *TAG = "AC_CONTROLLER";
 // ==============================================================================
 // 1. DEFINICIÓN DE PINES Y PARÁMETROS DE HARDWARE
 // ==============================================================================
-#define IR_TX_GPIO          GPIO_NUM_0      // LED Emisor Infrarrojo (con transistor NPN)
-#define IR_RX_GPIO          GPIO_NUM_6      // Demodulador TSOP1738 (38 kHz, GPIO 6)
+#define IR_TX_GPIO          GPIO_NUM_1      // LED Emisor Infrarrojo (con transistor NPN)
+#define IR_RX_GPIO          GPIO_NUM_0      // Demodulador TSOP1738 (38 kHz, GPIO 6)
 #define BOOT_BUTTON_GPIO    GPIO_NUM_9      // Botón BOOT integrado en ESP32-C3 SuperMini
 
 #define IR_RESOLUTION_HZ    1000000         // 1 MHz -> 1 tick = 1 microsegundo (us)
