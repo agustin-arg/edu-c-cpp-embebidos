@@ -5,6 +5,8 @@ __pycache__/
 build/
 build_*_*/
 sdkconfig
+sdkconfig.old
+sdkconfig.defaults.old
 
 # idf-ci build run output
 build_summary_*.xml
@@ -17,3 +19,12 @@ pytest_embedded_log/
 # idf-component-manager output
 dependencies.lock
 .vscode
+
+# Language server & editor cache
+.cache/
+*.swp
+*~
+.DS_Store
+
+# EEZ Studio local UI state
+*.eez-project-ui-state
