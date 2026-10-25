@@ -8,4 +8,7 @@ idf_component_register(
     INCLUDE_DIRS
         "."
         "ui"
+        "${CMAKE_CURRENT_LIST_DIR}/../managed_components/lvgl__lvgl/include"
+    REQUIRES
+        lvgl
 )
