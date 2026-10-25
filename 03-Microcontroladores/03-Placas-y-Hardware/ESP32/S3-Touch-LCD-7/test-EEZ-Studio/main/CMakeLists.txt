@@ -1,2 +1,11 @@
-idf_component_register(SRCS "test-EEZ-Studio.c"
-                    INCLUDE_DIRS ".")
+idf_component_register(
+    SRCS
+        "main.c"
+        "ui/ui.c"
+        "ui/screens.c"
+        "ui/images.c"
+        "ui/styles.c"
+    INCLUDE_DIRS
+        "."
+        "ui"
+)
