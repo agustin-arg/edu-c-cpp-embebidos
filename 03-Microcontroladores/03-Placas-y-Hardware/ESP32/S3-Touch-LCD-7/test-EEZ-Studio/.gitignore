@@ -16,3 +16,5 @@ managed_components/
 # Editor and language server configuration
 .vscode/
 .clangd
+
+!sdkconfig.defaults.esp32s3
