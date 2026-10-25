@@ -153,7 +153,7 @@ void esp_mesh_p2p_rx_main(void *arg)
         }
         recv_count++;
         /* process light control */
-        mesh_light_process(&from, data.data, data.size);
+        // mesh_light_process(&from, data.data, data.size);
         if (!(recv_count % 1)) {
             ESP_LOGW(MESH_TAG,
                      "[#RX:%d/%d][L:%d] parent:"MACSTR", receive from "MACSTR", size:%d, heap:%" PRId32 ", flag:%d[err:0x%x, proto:%d, tos:%d]",
@@ -243,7 +243,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
                  esp_mesh_is_root() ? "<ROOT>" :
                  (mesh_layer == 2) ? "<layer2>" : "", MAC2STR(id.addr), connected->duty);
         last_layer = mesh_layer;
-        mesh_connected_indicator(mesh_layer);
+        // mesh_connected_indicator(mesh_layer);
         is_mesh_connected = true;
         if (esp_mesh_is_root()) {
             esp_netif_dhcpc_stop(netif_sta);
@@ -258,7 +258,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
                  "<MESH_EVENT_PARENT_DISCONNECTED>reason:%d",
                  disconnected->reason);
         is_mesh_connected = false;
-        mesh_disconnected_indicator();
+        // mesh_disconnected_indicator();
         mesh_layer = esp_mesh_get_layer();
     }
     break;
@@ -270,7 +270,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
                  esp_mesh_is_root() ? "<ROOT>" :
                  (mesh_layer == 2) ? "<layer2>" : "");
         last_layer = mesh_layer;
-        mesh_connected_indicator(mesh_layer);
+        // mesh_connected_indicator(mesh_layer);
     }
     break;
     case MESH_EVENT_ROOT_ADDRESS: {
@@ -387,7 +387,7 @@ void ip_event_handler(void *arg, esp_event_base_t event_base,
 
 void app_main(void)
 {
-    ESP_ERROR_CHECK(mesh_light_init());
+//     ESP_ERROR_CHECK(mesh_light_init());
     ESP_ERROR_CHECK(nvs_flash_init());
     /*  tcpip initialization */
     ESP_ERROR_CHECK(esp_netif_init());

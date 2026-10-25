@@ -74,6 +74,10 @@ esp_err_t mesh_light_init(void)
 
 esp_err_t mesh_light_set(int color)
 {
+    if (!s_light_inited) {
+        return ESP_OK;
+    }
+
     switch (color) {
     case MESH_LIGHT_RED:
         /* Red */
