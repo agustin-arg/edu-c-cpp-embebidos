@@ -29,3 +29,6 @@ managed_components/
 
 # EEZ Studio local UI state
 *.eez-project-ui-state
+
+*.out
+.clangd

@@ -1,0 +1,2 @@
+source /home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/C6/super-mini/blink-neopixel/build_esp32c6/bootloader/gdbinit/symbols
+source /home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/C6/super-mini/blink-neopixel/build_esp32c6/bootloader/gdbinit/connect

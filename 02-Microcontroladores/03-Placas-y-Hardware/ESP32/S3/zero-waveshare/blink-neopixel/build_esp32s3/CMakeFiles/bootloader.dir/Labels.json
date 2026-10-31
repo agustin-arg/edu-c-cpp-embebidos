@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/S3/zero-waveshare/blink-neopixel/build_esp32s3/CMakeFiles/bootloader"
+		},
+		{
+			"file" : "/home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/S3/zero-waveshare/blink-neopixel/build_esp32s3/CMakeFiles/bootloader.rule"
+		},
+		{
+			"file" : "/home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/S3/zero-waveshare/blink-neopixel/build_esp32s3/CMakeFiles/bootloader-complete.rule"
+		},
+		{
+			"file" : "/home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/S3/zero-waveshare/blink-neopixel/build_esp32s3/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule"
+		},
+		{
+			"file" : "/home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/S3/zero-waveshare/blink-neopixel/build_esp32s3/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule"
+		},
+		{
+			"file" : "/home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/S3/zero-waveshare/blink-neopixel/build_esp32s3/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule"
+		},
+		{
+			"file" : "/home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/S3/zero-waveshare/blink-neopixel/build_esp32s3/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule"
+		},
+		{
+			"file" : "/home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/S3/zero-waveshare/blink-neopixel/build_esp32s3/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule"
+		},
+		{
+			"file" : "/home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/S3/zero-waveshare/blink-neopixel/build_esp32s3/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule"
+		},
+		{
+			"file" : "/home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/S3/zero-waveshare/blink-neopixel/build_esp32s3/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"bootloader"
+		],
+		"name" : "bootloader"
+	}
+}

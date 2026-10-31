@@ -1,0 +1,54 @@
+Command: ninja flash
+[1/5] cd /home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/C6/super-mini/blink-neopixel/build_esp32c6 && /home/agust/.espressif/python_env/idf6.1_py3.14_env/bin/python /home/agust/.espressif/v6.1/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/C6/super-mini/blink-neopixel/build_esp32c6/partition_table/partition-table.bin /home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/C6/super-mini/blink-neopixel/build_esp32c6/blink-neopixel.bin
+blink-neopixel.bin binary size 0x2de10 bytes. Smallest app partition is 0x100000 bytes. 0xd21f0 bytes (82%) free.
+[2/5] Performing build step for 'bootloader'
+[1/1] cd /home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/C6/super-mini/blink-neopixel/build_esp32c6/bootloader && /home/agust/.espressif/python_env/idf6.1_py3.14_env/bin/python /home/agust/.espressif/v6.1/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 /home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/C6/super-mini/blink-neopixel/build_esp32c6/bootloader/bootloader.bin
+Bootloader binary size 0x5650 bytes. 0x29b0 bytes (33%) free.
+[3/5] No install step for 'bootloader'
+[4/5] Completed 'bootloader'
+[4/5] Running utility command for flash
+esptool --chip esp32c6 -p /dev/ttyACM1 -b 460800 --before=default-reset --after=hard-reset write-flash --flash-mode dio --flash-freq 80m --flash-size 2MB 0x0 bootloader/bootloader.bin 0x8000 partition_table/partition-table.bin 0x10000 blink-neopixel.bin --skip-flashed
+esptool v5.6.0
+Serial port /dev/ttyACM1:
+Connecting...
+[1A[2K[1A[2KConnected to ESP32-C6 on /dev/ttyACM1:
+Chip type:          ESP32-C6FH4 (QFN32) (revision v0.2)
+Features:           Wi-Fi 6, BT 5 (LE), IEEE802.15.4, Single Core + LP Core, 160MHz, Embedded Flash 4MB
+Crystal frequency:  40MHz
+USB mode:           USB-Serial/JTAG
+MAC:                98:88:e0:ff:fe:70:f6:24
+BASE MAC:           98:88:e0:70:f6:24
+MAC_EXT:            ff:fe
+
+Uploading stub flasher...
+Running stub flasher...
+[1A[2K[1A[2KStub flasher running.
+Changing baud rate to 460800...
+Changed.
+
+Configuring flash size...
+
+Writing 'bootloader/bootloader.bin' at 0x00000000...
+SHA digest in image updated.
+Comparing flash contents against new data...
+[1A[2KFlash will be erased from 0x00000000 to 0x00005fff...
+Compressed 22096 bytes to 13919...
+[2KWriting at 0x00005650 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100.0% 13.59kB/13.59kB [0s] 
+[1A[2K[1A[2KWrote 22096 bytes (13919 compressed) at 0x00000000 in 0.2 seconds (1064.8 kbit/s).
+Verifying written data...
+[1A[2KHash of data verified.
+
+Writing 'partition_table/partition-table.bin' at 0x00008000...
+Comparing flash contents against new data...
+[1A[2K'partition_table/partition-table.bin' at 0x00008000 already in flash, skipping write.
+
+Writing 'blink-neopixel.bin' at 0x00010000...
+Comparing flash contents against new data...
+[1A[2KFlash will be erased from 0x00010000 to 0x0003dfff...
+Compressed 187920 bytes to 97773...
+[2KWriting at 0x0001aa1b ━━━━━                           16.8% 16.00kB/95.48kB [0s] [2KWriting at 0x000212dc ━━━━━━━━━━                      33.5% 32.00kB/95.48kB [0s] [2KWriting at 0x000285c8 ━━━━━━━━━━━━━━━                 50.3% 48.00kB/95.48kB [0s] [2KWriting at 0x000300ee ━━━━━━━━━━━━━━━━━━━━            67.0% 64.00kB/95.48kB [0s] [2KWriting at 0x000364ac ━━━━━━━━━━━━━━━━━━━━━━━━━       83.8% 80.00kB/95.48kB [0s] [2KWriting at 0x0003de10 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100.0% 95.48kB/95.48kB [0s] 
+[1A[2K[1A[2KWrote 187920 bytes (97773 compressed) at 0x00010000 in 0.8 seconds (1967.6 kbit/s).
+Verifying written data...
+[1A[2KHash of data verified.
+
+Hard resetting via RTS pin...

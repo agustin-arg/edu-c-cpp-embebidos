@@ -1,31 +1,39 @@
-# Aprendizaje de C, C++ y Sistemas Embebidos (Microcontroladores)
+# Aprendizaje de C y Sistemas Embebidos (Microcontroladores)
 
-Este repositorio contiene mis **praćticas personales, ejercicios teóricos y proyectos praćticos** orientados al aprendizaje de los lenguajes de programación **C** y **C++**, enfocándome en su aplicación directa a **sistemas embebidos y microcontroladores**.
-
----
-
-## Referencia Bibliográfica Base
-
-Gran parte de los contenidos teóricos, ejercitación de sintaxis y conceptos fundamentales de programación están estructurados siguiendo la hoja de ruta y actividades del libro:
-
-> **Deitel, H. M., & Deitel, P. J.**  
-> *Cómo Programar en C, C++ y Java* (Edición en Español).  
-> Prentice Hall / Pearson Education.
+Este repositorio contiene mis **prácticas personales, ejercicios teóricos y proyectos prácticos** orientados al aprendizaje del lenguaje de programación **C**, enfocándome en su aplicación directa a **sistemas embebidos y microcontroladores**.
 
 ---
 
-## Metodología de Aprendizaje
+## Referencias Bibliográficas Base
 
-El aprendizaje sigue un enfoque progresivo y modular compuesto por tres etapas:
+Gran parte de los contenidos teóricos, ejercitación de sintaxis y conceptos fundamentales de programación en C están estructurados siguiendo la hoja de ruta y actividades de dos libros de referencia:
 
-1. **Material y Ejercicios Teóricos (`01-C-Fundamentos-Deitel` & `02-Cpp-Fundamentos-Deitel`):**
-  - Resolución de cuestionarios y actividades teóricas del libro.
-  - Implementación de algoritmos, manejo de memoria (`malloc`/`free`), punteros, estructuras de datos y POO compilados directamente en PC (con GCC/Clang/MinGW).
-2. **Fundamentos de Embebidos y Periféricos (`03-Microcontroladores/01-Fundamentos-Embebidos` & `02-Perifericos-y-Componentes`):**
-  - Estudio de conceptos agnósticos del hardware (manipulación directa de registros mediante operaciones bit a bit, mapas de memoria, máquinas de estado finitas y RTOS).
-  - Manejo de periféricos electrónicos básicos y protocolos de comunicación (GPIO, ADC, PWM, UART, I2C, SPI, RF).
-3. **Aplicación en Placas de Desarrollo (`03-Microcontroladores/03-Placas-y-Hardware`):**
-  - Implementación práctica en microcontroladores y módulos de desarrollo reales:
-    - **ESESP32:** ESP32-NodeMCU-32S, ESP32-C3 Supermini, ESP32-C6.
-    - **Arduino:** AVR ATmega328P (Uno/Nano), ATmega2560 (Mega).
-    - **STM32:** Arquitectura ARM Cortex-M (Blue Pill, STM32 Nucleo).
+1. > **Deitel, H. M., & Deitel, P. J.**  
+   > *Cómo Programar en C, C++ y Java* (Edición en Español).  
+   > Prentice Hall / Pearson Education.  
+   > *(Ubicación: `01-C-Fundamentos/como-programar-C-CPP-java-Deitel/`)*
+
+2. > **Marzal Varó, Andrés & Gracia Luengo, Isabel**  
+   > *Introducción a la programación con C* (De Python a C).  
+   > Universitat Jaume I.  
+   > *(Ubicación: `01-C-Fundamentos/introduccion-programacion-C-Andres-e-Isabel/`)*
+
+---
+
+## Estructura del Repositorio y Metodología
+
+El aprendizaje sigue un enfoque progresivo y modular:
+
+1. **Fundamentos de C (`01-C-Fundamentos/`):**
+   - **`0-instalar-configurar-C/`**: Guía y pruebas de configuración del entorno de compilación (GCC / MinGW / Linux).
+   - **`como-programar-C-CPP-java-Deitel/`**: Cuestionarios, ejercicios y resolución de capítulos teóricos y prácticos del libro de Deitel (Capítulos 1 al 13).
+   - **`introduccion-programacion-C-Andres-e-Isabel/`**: Ejercitación y estudio del enfoque de transición desde Python hacia C, punteros, estructuras y memoria dinámica.
+2. **Microcontroladores y Sistemas Embebidos (`02-Microcontroladores/`):**
+   - **`01-Fundamentos-Embebidos/`**: Conceptos agnósticos del hardware (manipulación directa de registros bit a bit, mapas de memoria, máquinas de estado finitas y RTOS).
+   - **`02-Perifericos-y-Componentes/`**: Periféricos electrónicos básicos y protocolos de comunicación (GPIO, ADC, PWM, UART, I2C, SPI, RF).
+   - **`03-Placas-y-Hardware/`**: Implementaciones prácticas en placas de desarrollo:
+     - **ESP32:** ESP32-NodeMCU-32S, ESP32-C3 Supermini, ESP32-C6, ESP32-S3.
+     - **Arduino:** AVR ATmega328P (Uno/Nano), ATmega2560 (Mega).
+     - **STM32:** Arquitectura ARM Cortex-M (Blue Pill, STM32 Nucleo).
+3. **Raspberry Pi y Linux Embebido (`03-Raspberry-Pi/`):**
+   - Pruebas y desarrollo en entornos SBC y Linux embebido.

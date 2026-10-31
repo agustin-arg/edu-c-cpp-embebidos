@@ -1,0 +1,2 @@
+source /home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/S3/zero-waveshare/blink-neopixel/build_esp32s3/bootloader/gdbinit/symbols
+source /home/agust/Projects/edu-c-cpp-embebidos/03-Microcontroladores/03-Placas-y-Hardware/ESP32/S3/zero-waveshare/blink-neopixel/build_esp32s3/bootloader/gdbinit/connect
